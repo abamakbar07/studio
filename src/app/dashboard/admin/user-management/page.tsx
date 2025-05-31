@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { USER_ROLES } from "@/lib/constants";
-import type { User } from "@/lib/types";
+import type { User, UserRole } from "@/lib/types";
 import { MoreHorizontal, PlusCircle, Edit2, Trash2, CheckCircle, ShieldAlert, AlertCircle, MailWarning, UserCheck, UserX } from "lucide-react";
 import React, { useState, useEffect, useCallback } from "react";
 import { db } from "@/lib/firebase/config";
@@ -22,6 +22,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger, // Added AlertDialogTrigger
 } from "@/components/ui/alert-dialog";
 
 export default function UserManagementPage() {
