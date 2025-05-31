@@ -1,3 +1,4 @@
+
 "use client";
 
 import { Button } from "@/components/ui/button";
@@ -6,42 +7,82 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { USER_ROLES } from "@/lib/constants";
-import type { User, UserRole } from "@/lib/types";
-import { MoreHorizontal, PlusCircle, Edit2, Trash2, CheckCircle, ShieldAlert } from "lucide-react";
-import React, { useState } from "react";
-// Dialog components for add/edit user - not implemented in this pass for brevity
-// import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"; 
-
-const initialUsers: User[] = [
-  { id: "user-1", email: "superuser@example.com", name: "Main Superuser", role: "superuser", approved: true },
-  { id: "user-2", email: "input_admin@example.com", name: "Data Input Admin", role: "admin_input", superuserEmail: "superuser@example.com" },
-  { id: "user-3", email: "doc_control@example.com", name: "Doc Control Admin", role: "admin_doc_control", superuserEmail: "superuser@example.com" },
-  { id: "user-4", email: "verify_admin@example.com", name: "Verification Admin", role: "admin_verification", superuserEmail: "superuser@example.com" },
-  { id: "user-5", email: "pending_superuser@example.com", name: "Pending Approval", role: "superuser", approved: false },
-];
+import type { User } from "@/lib/types";
+import { MoreHorizontal, PlusCircle, Edit2, Trash2, CheckCircle, ShieldAlert, AlertCircle } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { db } from "@/lib/firebase/config";
+import { collection, onSnapshot, doc, updateDoc, deleteDoc, Timestamp } from "firebase/firestore";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 export default function UserManagementPage() {
-  const [users, setUsers] = useState<User[]>(initialUsers);
+  const [users, setUsers] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
-  const handleApproveUser = (userId: string) => {
-    setUsers(prev => prev.map(u => u.id === userId ? {...u, approved: true} : u));
-    toast({ title: "User Approved", description: `User ${userId} has been approved.`});
+  useEffect(() => {
+    setIsLoading(true);
+    const usersCollectionRef = collection(db, "users");
+    const unsubscribe = onSnapshot(usersCollectionRef, (snapshot) => {
+      const fetchedUsers: User[] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+      setUsers(fetchedUsers);
+      setIsLoading(false);
+    }, (error) => {
+      console.error("Error fetching users:", error);
+      toast({ title: "Error", description: "Failed to load users from database.", variant: "destructive" });
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe(); // Cleanup listener on component unmount
+  }, [toast]);
+
+  const handleApproveUser = async (userId: string) => {
+    const userDocRef = doc(db, "users", userId);
+    try {
+      await updateDoc(userDocRef, { 
+        approved: true,
+        updatedAt: new Date().toISOString(),
+      });
+      toast({ title: "User Approved", description: `User has been approved successfully.` });
+    } catch (error) {
+      console.error("Error approving user:", error);
+      toast({ title: "Error", description: "Failed to approve user.", variant: "destructive" });
+    }
   };
 
-  const handleDeleteUser = (userId: string) => {
-    setUsers(prev => prev.filter(u => u.id !== userId));
-    toast({ title: "User Deleted", description: `User ${userId} has been deleted.`});
+  const handleDeleteUser = async (userId: string) => {
+    const userDocRef = doc(db, "users", userId);
+    try {
+      await deleteDoc(userDocRef);
+      toast({ title: "User Deleted", description: `User has been deleted successfully.` });
+      // Users state will update via onSnapshot
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      toast({ title: "Error", description: "Failed to delete user.", variant: "destructive" });
+    }
   };
   
-  // Placeholder for edit/add user functionality
   const openEditUserDialog = (user: User) => {
-    toast({ title: "Edit User", description: `Editing user ${user.email} (UI placeholder).`});
+    toast({ title: "Edit User (Placeholder)", description: `Editing user ${user.email}. This feature is not yet fully implemented with Firestore.`});
+    // Placeholder: Actual implementation would involve a dialog and Firestore update logic.
   }
   const openAddUserDialog = () => {
-    toast({ title: "Add User", description: `Adding new user (UI placeholder).`});
+    toast({ title: "Add User (Placeholder)", description: `Adding new user. This feature is not yet fully implemented with Firestore.`});
+     // Placeholder: Actual implementation would involve a dialog and Firestore creation logic.
   }
 
+  if (isLoading) {
+    return <div className="flex justify-center items-center h-64"><p>Loading user data...</p></div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -57,7 +98,7 @@ export default function UserManagementPage() {
         </CardHeader>
         <CardContent>
           {users.length === 0 ? (
-            <p className="text-muted-foreground">No users found.</p>
+            <p className="text-muted-foreground">No users found in the database.</p>
           ) : (
             <Table>
               <TableHeader>
@@ -66,6 +107,7 @@ export default function UserManagementPage() {
                   <TableHead>Email</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Status / Superuser</TableHead>
+                  <TableHead>Created At</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -90,6 +132,7 @@ export default function UserManagementPage() {
                         <span className="text-sm text-muted-foreground">{user.superuserEmail || 'N/A'}</span>
                       )}
                     </TableCell>
+                    <TableCell>{user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}</TableCell>
                     <TableCell className="text-right">
                        <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -106,9 +149,27 @@ export default function UserManagementPage() {
                           <DropdownMenuItem onClick={() => openEditUserDialog(user)}>
                             <Edit2 className="mr-2 h-4 w-4" /> Edit User
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleDeleteUser(user.id)} className="text-destructive">
-                            <Trash2 className="mr-2 h-4 w-4" /> Delete User
-                          </DropdownMenuItem>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">
+                                <Trash2 className="mr-2 h-4 w-4" /> Delete User
+                              </DropdownMenuItem>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This action cannot be undone. This will permanently delete the user <strong className="text-foreground">{user.email}</strong>.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => handleDeleteUser(user.id)} className="bg-destructive hover:bg-destructive/90">
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>

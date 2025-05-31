@@ -1,8 +1,9 @@
+
 "use client";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
@@ -47,24 +48,57 @@ export default function RegisterAdminPage() {
   const adminRoles = USER_ROLES.filter(role => role.value !== "superuser");
 
   const onSubmit = async (data: RegisterAdminFormValues) => {
-    // Placeholder for actual admin registration logic
-    console.log("Admin registration data:", data);
-    toast({
-      title: "Admin Registration Submitted",
-      description: "Your admin account has been created under the provided superuser. You can now log in.",
-      duration: 5000,
-    });
-    // Simulate submission
-    setTimeout(() => {
-      router.push("/auth/login");
-    }, 2000);
+    form.formState.isSubmitting = true;
+    try {
+      const res = await fetch('/api/auth/register-admin', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          name: data.name, 
+          email: data.email, 
+          role: data.role,
+          superuserEmail: data.superuserEmail,
+          // password: data.password // Password not directly stored in Firestore for user info, but sent for potential Firebase Auth integration
+        }),
+      });
+
+      const result = await res.json();
+
+      if (!res.ok) {
+        throw new Error(result.message || 'Failed to register admin user');
+      }
+
+      toast({
+        title: "Admin Registration Submitted",
+        description: "Admin account created. You can now log in.",
+        duration: 5000,
+      });
+      
+      setTimeout(() => {
+        router.push("/auth/login");
+      }, 2000);
+
+    } catch (error) {
+      console.error("Admin registration error:", error);
+      const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred.";
+      toast({
+        title: "Registration Error",
+        description: `Failed to register admin: ${errorMessage}. Please ensure the superuser email is correct and approved.`,
+        variant: "destructive",
+        duration: 7000,
+      });
+    } finally {
+      form.formState.isSubmitting = false;
+    }
   };
 
   return (
     <Card className="w-full max-w-md shadow-2xl">
       <CardHeader>
         <CardTitle className="font-headline text-3xl">Register as Admin User</CardTitle>
-        <CardDescription>Create your StockFlow admin account. Requires a valid superuser email for association.</CardDescription>
+        <CardDescription>Create your StockFlow admin account. Requires a valid, approved superuser email for association.</CardDescription>
       </CardHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)}>
@@ -130,7 +164,7 @@ export default function RegisterAdminPage() {
                   <FormControl>
                     <Input type="email" placeholder="superuser@example.com" {...field} />
                   </FormControl>
-                  <FormDescription>Enter the email of an existing superuser to associate this admin account.</FormDescription>
+                  <FormDescription>Enter the email of an existing, approved superuser to associate this admin account.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

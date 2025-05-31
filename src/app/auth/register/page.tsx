@@ -1,3 +1,4 @@
+
 "use client";
 
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,7 @@ import { Info } from "lucide-react";
 const registerSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }),
   email: z.string().email({ message: "Invalid email address." }),
-  password: z.string().min(8, { message: "Password must be at least 8 characters." }),
+  password: z.string().min(8, { message: "Password must be at least 8 characters." }), // Password for potential future Firebase Auth use
   confirmPassword: z.string(),
 }).refine(data => data.password === data.confirmPassword, {
   message: "Passwords don't match.",
@@ -39,41 +40,43 @@ export default function RegisterPage() {
   });
 
   const onSubmit = async (data: RegisterFormValues) => {
+    form.formState.isSubmitting = true;
     try {
-      const res = await fetch('/api/send-approval-email', {
+      const res = await fetch('/api/auth/register-superuser', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: data.name, email: data.email }),
+        body: JSON.stringify({ name: data.name, email: data.email, password: data.password }),
       });
 
       const result = await res.json();
 
       if (!res.ok) {
-        throw new Error(result.message || 'Failed to send approval email');
+        throw new Error(result.message || 'Failed to submit registration');
       }
 
       toast({
         title: "Registration Submitted",
-        description: "Your superuser registration is pending approval. You will be notified upon approval.",
+        description: result.message || "Your superuser registration is pending approval. You will be notified upon approval.",
         duration: 7000,
       });
       
-      // Simulate submission delay and redirect
       setTimeout(() => {
         router.push("/auth/login");
       }, 2000);
 
     } catch (error) {
-      console.error("Registration/Email sending error:", error);
+      console.error("Registration error:", error);
       const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred.";
       toast({
         title: "Registration Error",
-        description: `Your registration was submitted, but there was an error: ${errorMessage}. Please contact muhamad.afriansyah@dsv.com directly if this issue persists.`,
+        description: `There was an error submitting your registration: ${errorMessage}. Please contact muhamad.afriansyah@dsv.com directly if this issue persists.`,
         variant: "destructive",
         duration: 10000,
       });
+    } finally {
+       form.formState.isSubmitting = false;
     }
   };
 
@@ -81,7 +84,7 @@ export default function RegisterPage() {
     <Card className="w-full max-w-md shadow-2xl">
       <CardHeader>
         <CardTitle className="font-headline text-3xl">Register as Superuser</CardTitle>
-        <CardDescription>Create your StockFlow superuser account. Approval is required.</CardDescription>
+        <CardDescription>Create your StockFlow superuser account. Approval by an administrator (muhamad.afriansyah@dsv.com) is required.</CardDescription>
       </CardHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)}>

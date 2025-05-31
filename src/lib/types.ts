@@ -1,12 +1,15 @@
+
 export type UserRole = "superuser" | "admin_input" | "admin_doc_control" | "admin_verification";
 
 export interface User {
-  id: string;
+  id: string; // Firestore document ID
   email: string;
   role: UserRole;
   name?: string;
-  approved?: boolean; // For superuser
-  superuserEmail?: string; // For admin registration
+  approved?: boolean; // For superuser status
+  superuserEmail?: string; // For admin registration, linking to a superuser
+  createdAt: string; // ISO string representation of Timestamp
+  updatedAt?: string; // ISO string representation of Timestamp
 }
 
 export type FormStatus = "Printed" | "Process Counting" | "Finish Counting" | "Verified" | "Inputted";
