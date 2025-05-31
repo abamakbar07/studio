@@ -4,6 +4,7 @@ import { db } from '@/lib/firebase/config';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import type { User } from '@/lib/types';
 import { cookies } from 'next/headers';
+import bcrypt from 'bcryptjs';
 
 export async function POST(req: NextRequest) {
   try {
@@ -24,8 +25,14 @@ export async function POST(req: NextRequest) {
     const userDoc = querySnapshot.docs[0];
     const user = { id: userDoc.id, ...userDoc.data() } as User;
 
-    // WARNING: Comparing plain text passwords. Implement hashing in a real app.
-    if (user.password !== password) {
+    if (!user.password) {
+        // This should ideally not happen if registration always hashes a password
+        console.error(`User ${email} has no password stored.`);
+        return NextResponse.json({ message: 'Authentication error. Please contact support.' }, { status: 500 });
+    }
+
+    const passwordMatch = bcrypt.compareSync(password, user.password);
+    if (!passwordMatch) {
       return NextResponse.json({ message: 'Invalid email or password.' }, { status: 401 });
     }
 
@@ -37,22 +44,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Account not approved. Please wait for administrator approval.' }, { status: 403 });
     }
     
-    // Admins (non-superusers) also need to be active
     if (user.role !== 'superuser' && !user.isActive) {
         return NextResponse.json({ message: 'Account not activated. A superuser must activate your account.' }, { status: 403 });
     }
     
-    // Superusers are active if approved
     if (user.role === 'superuser' && !user.isActive && user.approved) {
-        // This case should ideally be handled by approval setting isActive true for superusers
-        // but as a fallback, if a superuser is approved but not active, they can't login.
-        // This indicates an issue in the approval flow if reached.
          return NextResponse.json({ message: 'Superuser account approved but not active. Please contact support.' }, { status: 403 });
     }
 
-
-    // Basic session: Set a cookie
-    // In a real app, use JWTs and more robust session management
     const sessionData = {
       id: user.id,
       email: user.email,
@@ -68,7 +67,6 @@ export async function POST(req: NextRequest) {
       sameSite: 'lax',
     });
     
-    // Don't send password back
     const { password: _, ...userResponse } = user;
 
     return NextResponse.json({ message: 'Login successful', user: userResponse }, { status: 200 });

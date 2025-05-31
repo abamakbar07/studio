@@ -1,10 +1,13 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { db } from '@/lib/firebase/config';
-import { collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
+import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
 import nodemailer from 'nodemailer';
+import bcrypt from 'bcryptjs';
 import type { User } from '@/lib/types';
 import { generateToken, getTokenExpiry } from '@/lib/utils';
+
+const SALT_ROUNDS = 10; // Cost factor for bcrypt
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,6 +24,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'User with this email already exists.' }, { status: 409 });
     }
 
+    const hashedPassword = bcrypt.hashSync(password, SALT_ROUNDS);
     const verificationToken = generateToken();
     const approvalToken = generateToken();
     const now = new Date().toISOString();
@@ -28,36 +32,34 @@ export async function POST(req: NextRequest) {
     const newUserRef = await addDoc(collection(db, 'users'), {
       name,
       email,
-      password, // WARNING: Storing plain text password. Hash in real app.
+      password: hashedPassword,
       role: 'superuser',
       approved: false,
       emailVerified: false,
-      isActive: false, // Superusers become active upon approval
+      isActive: false,
       verificationToken,
-      verificationTokenExpires: getTokenExpiry(24), // 24 hours
+      verificationTokenExpires: getTokenExpiry(24),
       approvalToken,
-      approvalTokenExpires: getTokenExpiry(7 * 24), // 7 days for approval
+      approvalTokenExpires: getTokenExpiry(7 * 24),
       createdAt: now,
       updatedAt: now,
     } as Omit<User, 'id'>);
 
-    // Send verification email
     const {
       EMAIL_HOST,
       EMAIL_PORT,
       EMAIL_USER,
       EMAIL_PASS,
-      ADMINISTRATOR_EMAIL, // This is muhamad.afriansyah@dsv.com or dev@akbarafriansyah.my.id
-      NEXT_PUBLIC_APP_URL // Base URL of the app
+      ADMINISTRATOR_EMAIL,
+      NEXT_PUBLIC_APP_URL
     } = process.env;
 
     if (!EMAIL_HOST || !EMAIL_PORT || !EMAIL_USER || !EMAIL_PASS || !ADMINISTRATOR_EMAIL || !NEXT_PUBLIC_APP_URL) {
       console.error('Missing email or app URL configuration in environment variables.');
-      // User is created, but email failed.
       return NextResponse.json({ 
         message: 'Superuser registration submitted. However, failed to send critical emails due to server misconfiguration. Please contact support.',
         userId: newUserRef.id 
-      }, { status: 201 }); // 201 because user created, but with a warning
+      }, { status: 201 });
     }
 
     const transporter = nodemailer.createTransport({
@@ -70,8 +72,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // 1. Email for User to verify their email address
-    const verificationLink = `${NEXT_PUBLIC_APP_URL}/api/auth/verify-email/${verificationToken}`; // MODIFIED: Added /api
+    const verificationLink = `${NEXT_PUBLIC_APP_URL}/api/auth/verify-email/${verificationToken}`;
     const verificationMailOptions = {
       from: `"StockFlow System" <${EMAIL_USER}>`,
       to: email,
@@ -89,8 +90,7 @@ export async function POST(req: NextRequest) {
     };
     await transporter.sendMail(verificationMailOptions);
 
-    // 2. Email for Administrator to approve the superuser registration
-    const approvalLink = `${NEXT_PUBLIC_APP_URL}/api/auth/approve-superuser/${approvalToken}`; // API route for direct approval
+    const approvalLink = `${NEXT_PUBLIC_APP_URL}/api/auth/approve-superuser/${approvalToken}`;
     const adminMailOptions = {
       from: `"StockFlow System" <${EMAIL_USER}>`,
       to: ADMINISTRATOR_EMAIL,

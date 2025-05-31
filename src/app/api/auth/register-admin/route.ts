@@ -5,6 +5,9 @@ import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
 import type { User } from '@/lib/types';
 import { generateToken, getTokenExpiry } from '@/lib/utils';
 import nodemailer from 'nodemailer';
+import bcrypt from 'bcryptjs';
+
+const SALT_ROUNDS = 10; // Cost factor for bcrypt
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,14 +21,12 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ message: 'Cannot register as superuser through this route.' }, { status: 400 });
     }
 
-    // Check if user already exists
     const userQuery = query(collection(db, 'users'), where('email', '==', email));
     const userSnapshot = await getDocs(userQuery);
     if (!userSnapshot.empty) {
       return NextResponse.json({ message: 'User with this email already exists.' }, { status: 409 });
     }
 
-    // Validate superuserEmail exists and is an approved superuser
     const superuserQuery = query(
       collection(db, 'users'),
       where('email', '==', superuserEmail),
@@ -37,25 +38,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Invalid or unapproved superuser email provided for association.' }, { status: 400 });
     }
 
+    const hashedPassword = bcrypt.hashSync(password, SALT_ROUNDS);
     const verificationToken = generateToken();
     const now = new Date().toISOString();
 
     const newAdminRef = await addDoc(collection(db, 'users'), {
       name,
       email,
-      password, // WARNING: Storing plain text password. Hash in real app.
+      password: hashedPassword,
       role,
       superuserEmail,
-      approved: false, // Admins require superuser approval
+      approved: false, 
       emailVerified: false,
-      isActive: false, // Admins require activation by superuser
+      isActive: false, 
       verificationToken,
-      verificationTokenExpires: getTokenExpiry(24), // 24 hours
+      verificationTokenExpires: getTokenExpiry(24), 
       createdAt: now,
       updatedAt: now,
     } as Omit<User, 'id'> );
 
-    // Send verification email to the admin user
     const {
       EMAIL_HOST,
       EMAIL_PORT,
@@ -66,7 +67,6 @@ export async function POST(req: NextRequest) {
 
     if (!EMAIL_HOST || !EMAIL_PORT || !EMAIL_USER || !EMAIL_PASS || !NEXT_PUBLIC_APP_URL) {
       console.error('Missing email or app URL configuration for admin verification email.');
-      // Admin user is created, but email failed. Superuser will need to manage.
       return NextResponse.json({ 
         message: `Admin user ${email} registered pending email verification and superuser approval. Failed to send verification email due to server misconfiguration.`,
         userId: newAdminRef.id 
@@ -76,14 +76,14 @@ export async function POST(req: NextRequest) {
     const transporter = nodemailer.createTransport({
       host: EMAIL_HOST,
       port: Number(EMAIL_PORT),
-      secure: Number(EMAIL_PORT) === 465, // true for 465, false for other ports
+      secure: Number(EMAIL_PORT) === 465, 
       auth: {
         user: EMAIL_USER,
         pass: EMAIL_PASS,
       },
     });
 
-    const verificationLink = `${NEXT_PUBLIC_APP_URL}/api/auth/verify-email/${verificationToken}`; // MODIFIED: Added /api
+    const verificationLink = `${NEXT_PUBLIC_APP_URL}/api/auth/verify-email/${verificationToken}`;
     const mailOptions = {
       from: `"StockFlow System" <${EMAIL_USER}>`,
       to: email,
