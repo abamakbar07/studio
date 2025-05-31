@@ -33,41 +33,36 @@ export default function UserManagementPage() {
   const { toast } = useToast();
 
   useEffect(() => {
+    setIsLoading(true);
     const sessionCookie = Cookies.get('stockflow-session');
     if (sessionCookie) {
       try {
         const userData = JSON.parse(sessionCookie);
-        if (userData?.role === 'superuser') {
+        if (userData?.id && userData?.email && userData?.role) { // Ensure essential fields exist
           setLoggedInUser(userData);
         } else {
+          console.warn("Session cookie data is incomplete:", userData);
           setLoggedInUser(null);
-          setIsLoading(false);
-          // toast({ title: "Access Denied", description: "You do not have permission to view this page.", variant: "destructive" });
         }
       } catch (e) {
         console.error("Failed to parse session cookie:", e);
         setLoggedInUser(null);
-        setIsLoading(false);
       }
     } else {
       setLoggedInUser(null);
-      setIsLoading(false);
     }
+    // Defer setting isLoading to false until fetchUsers logic runs
   }, []);
 
-  const fetchUsers = useCallback((superuserEmail: string | null) => {
-    if (!superuserEmail) {
-      setIsLoading(false);
-      setUsers([]);
-      return () => {};
-    }
-
+  const fetchUsers = useCallback((superuserEmailToFilterBy: string) => {
+    // This function assumes superuserEmailToFilterBy is valid and non-null
+    // because it's only called if loggedInUser is a superuser with an email.
     setIsLoading(true);
     const usersCollectionRef = collection(db, "users");
     const q = query(
       usersCollectionRef,
-      where('role', '!=', 'superuser'),
-      where('superuserEmail', '==', superuserEmail)
+      where('role', '!=', 'superuser'), // Exclude other superusers from the list
+      where('superuserEmail', '==', superuserEmailToFilterBy) // Filter by the logged-in superuser's email
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -84,12 +79,12 @@ export default function UserManagementPage() {
 
   useEffect(() => {
     let unsubscribe = () => {};
-    if (loggedInUser?.email && loggedInUser.role === 'superuser') {
+    if (loggedInUser && loggedInUser.role === 'superuser' && loggedInUser.email) {
       unsubscribe = fetchUsers(loggedInUser.email);
     } else {
-      // If not a superuser or no email, ensure users are cleared and loading stopped.
+      // If not a superuser, or user data is incomplete, or no session
       setUsers([]);
-      setIsLoading(false);
+      setIsLoading(false); // Ensure loading stops if we don't fetch
     }
     return () => unsubscribe();
   }, [loggedInUser, fetchUsers]);
@@ -106,11 +101,9 @@ export default function UserManagementPage() {
   };
 
   const handleApproveUser = (userId: string, role: UserRole) => {
-    const message = role === 'superuser' 
-      ? `Superuser ${userId} approved and activated.` // This case should ideally not be handled here anymore for superusers.
-      : `Admin user ${userId} approved. They can now be activated.`;
-    const updates: Partial<User> = role === 'superuser' ? { approved: true, isActive: true } : { approved: true };
-    updateUserField(userId, updates, message);
+    // Approval for admin users, managed by superuser
+    const message = `Admin user ${userId} approved. They can now be activated.`;
+    updateUserField(userId, { approved: true }, message);
   };
 
   const handleActivateUser = (userId: string) => {
@@ -143,12 +136,18 @@ export default function UserManagementPage() {
     if (isLoading) {
       return <div className="flex justify-center items-center h-64"><p>Loading user data...</p></div>;
     }
+
+    // Check if authorized (must be a logged-in superuser)
     if (!loggedInUser || loggedInUser.role !== 'superuser') {
       return <p className="text-muted-foreground p-4 text-center">You are not authorized to view this page or manage users.</p>;
     }
+
+    // If authorized superuser, but no admin users associated with them
     if (users.length === 0) {
       return <p className="text-muted-foreground p-4 text-center">No admin users found associated with your account. You can register new admin users via the registration page.</p>;
     }
+
+    // Authorized superuser has associated admin users, render the table
     return (
       <Table>
         <TableHeader>
@@ -167,7 +166,7 @@ export default function UserManagementPage() {
               <TableCell className="font-medium">{user.name || 'N/A'}</TableCell>
               <TableCell>{user.email}</TableCell>
               <TableCell>
-                <Badge variant={user.role === 'superuser' ? "default" : "secondary"} className="capitalize">
+                <Badge variant={"secondary"} className="capitalize">
                   {USER_ROLES.find(r => r.value === user.role)?.label || user.role}
                 </Badge>
               </TableCell>
@@ -178,12 +177,12 @@ export default function UserManagementPage() {
                       <MailWarning className="mr-1 h-3 w-3" /> Email Unverified
                     </Badge>
                   )}
-                  {!user.approved && (
+                  {user.emailVerified && !user.approved && ( // Show pending approval only if email is verified
                     <Badge variant="outline" className="text-orange-600 border-orange-500">
                       <ShieldAlert className="mr-1 h-3 w-3" /> Pending Approval
                     </Badge>
                   )}
-                  {user.approved && !user.isActive && user.role !== 'superuser' && (
+                  {user.approved && !user.isActive && ( // Show pending activation if approved but not active
                      <Badge variant="outline" className="text-blue-600 border-blue-500">
                        <UserX className="mr-1 h-3 w-3" /> Pending Activation
                      </Badge>
@@ -208,7 +207,7 @@ export default function UserManagementPage() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     {/* Approve button only for admins, not superusers (superusers approved via link) */}
-                    {user.role !== 'superuser' && !user.approved && user.emailVerified && (
+                    {user.role !== 'superuser' && user.emailVerified && !user.approved && (
                        <DropdownMenuItem onClick={() => handleApproveUser(user.id, user.role)}>
                           <CheckCircle className="mr-2 h-4 w-4 text-green-500" /> Approve User
                         </DropdownMenuItem>
