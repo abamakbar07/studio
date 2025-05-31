@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const verificationLink = `${NEXT_PUBLIC_APP_URL}/auth/verify-email/${verificationToken}`;
+    const verificationLink = `${NEXT_PUBLIC_APP_URL}/api/auth/verify-email/${verificationToken}`; // MODIFIED: Added /api
     const mailOptions = {
       from: `"StockFlow System" <${EMAIL_USER}>`,
       to: email,

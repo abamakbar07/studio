@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
       EMAIL_PORT,
       EMAIL_USER,
       EMAIL_PASS,
-      ADMINISTRATOR_EMAIL, // This is muhamad.afriansyah@dsv.com
+      ADMINISTRATOR_EMAIL, // This is muhamad.afriansyah@dsv.com or dev@akbarafriansyah.my.id
       NEXT_PUBLIC_APP_URL // Base URL of the app
     } = process.env;
 
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
     });
 
     // 1. Email for User to verify their email address
-    const verificationLink = `${NEXT_PUBLIC_APP_URL}/auth/verify-email/${verificationToken}`;
+    const verificationLink = `${NEXT_PUBLIC_APP_URL}/api/auth/verify-email/${verificationToken}`; // MODIFIED: Added /api
     const verificationMailOptions = {
       from: `"StockFlow System" <${EMAIL_USER}>`,
       to: email,
