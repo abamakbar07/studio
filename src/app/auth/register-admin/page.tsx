@@ -63,11 +63,18 @@ export default function RegisterAdminPage() {
         }),
       });
 
-      const result = await res.json();
-
       if (!res.ok) {
-        throw new Error(result.message || 'Failed to register admin user');
+        let errorData;
+        try {
+          errorData = await res.json();
+        } catch (e) {
+          // If parsing JSON fails, use status text or a generic message
+           throw new Error(res.statusText || 'Failed to register admin user. Server returned an unexpected response.');
+        }
+        throw new Error(errorData.message || 'Failed to register admin user');
       }
+
+      const result = await res.json();
 
       toast({
         title: "Admin Registration Submitted",

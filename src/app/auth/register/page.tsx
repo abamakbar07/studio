@@ -49,11 +49,18 @@ export default function RegisterPage() {
         body: JSON.stringify({ name: data.name, email: data.email, password: data.password }),
       });
 
-      const result = await res.json();
-
       if (!res.ok) {
-        throw new Error(result.message || 'Failed to submit registration');
+        let errorData;
+        try {
+          errorData = await res.json();
+        } catch (e) {
+          // If parsing JSON fails, use status text or a generic message
+          throw new Error(res.statusText || 'Failed to submit registration. Server returned an unexpected response.');
+        }
+        throw new Error(errorData.message || 'Failed to submit registration');
       }
+
+      const result = await res.json();
 
       toast({
         title: "Registration Submitted",
