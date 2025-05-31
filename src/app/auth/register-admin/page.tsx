@@ -48,7 +48,6 @@ export default function RegisterAdminPage() {
   const adminRoles = USER_ROLES.filter(role => role.value !== "superuser");
 
   const onSubmit = async (data: RegisterAdminFormValues) => {
-    form.formState.isSubmitting = true;
     try {
       const res = await fetch('/api/auth/register-admin', {
         method: 'POST',
@@ -89,8 +88,6 @@ export default function RegisterAdminPage() {
         variant: "destructive",
         duration: 7000,
       });
-    } finally {
-      form.formState.isSubmitting = false;
     }
   };
 

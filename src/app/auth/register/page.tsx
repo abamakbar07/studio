@@ -40,7 +40,6 @@ export default function RegisterPage() {
   });
 
   const onSubmit = async (data: RegisterFormValues) => {
-    form.formState.isSubmitting = true;
     try {
       const res = await fetch('/api/auth/register-superuser', {
         method: 'POST',
@@ -75,8 +74,6 @@ export default function RegisterPage() {
         variant: "destructive",
         duration: 10000,
       });
-    } finally {
-       form.formState.isSubmitting = false;
     }
   };
 
