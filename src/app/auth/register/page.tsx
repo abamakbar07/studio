@@ -77,7 +77,7 @@ export default function RegisterPage() {
       const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred.";
       toast({
         title: "Registration Error",
-        description: `There was an error submitting your registration: ${errorMessage}. Please contact muhamad.afriansyah@dsv.com directly if this issue persists.`,
+        description: `There was an error submitting your registration: ${errorMessage}. Please contact dev@akbarafriansyah.my.id directly if this issue persists.`,
         variant: "destructive",
         duration: 10000,
       });
@@ -88,7 +88,7 @@ export default function RegisterPage() {
     <Card className="w-full max-w-md shadow-2xl">
       <CardHeader>
         <CardTitle className="font-headline text-3xl">Register as Superuser</CardTitle>
-        <CardDescription>Create your StockFlow superuser account. Approval by an administrator (muhamad.afriansyah@dsv.com) is required.</CardDescription>
+        <CardDescription>Create your StockFlow superuser account. Approval by an administrator (dev@akbarafriansyah.my.id) is required.</CardDescription>
       </CardHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)}>
@@ -97,7 +97,7 @@ export default function RegisterPage() {
               <Info className="h-4 w-4" />
               <AlertTitle className="font-headline">Approval Required</AlertTitle>
               <AlertDescription>
-                Superuser registrations require manual approval by the system administrator (muhamad.afriansyah@dsv.com). You will be notified upon approval.
+                Superuser registrations require manual approval by the system administrator (dev@akbarafriansyah.my.id). You will be notified upon approval.
               </AlertDescription>
             </Alert>
             <FormField
