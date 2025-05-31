@@ -39,8 +39,6 @@ export default function RegisterPage() {
   });
 
   const onSubmit = async (data: RegisterFormValues) => {
-    // Placeholder for actual registration logic
-    // Send email to administrator for approval
     try {
       const res = await fetch('/api/send-approval-email', {
         method: 'POST',
@@ -50,8 +48,10 @@ export default function RegisterPage() {
         body: JSON.stringify({ name: data.name, email: data.email }),
       });
 
+      const result = await res.json();
+
       if (!res.ok) {
-        throw new Error('Failed to send approval email');
+        throw new Error(result.message || 'Failed to send approval email');
       }
 
       toast({
@@ -59,28 +59,22 @@ export default function RegisterPage() {
         description: "Your superuser registration is pending approval. You will be notified upon approval.",
         duration: 7000,
       });
+      
+      // Simulate submission delay and redirect
+      setTimeout(() => {
+        router.push("/auth/login");
+      }, 2000);
 
     } catch (error) {
-      console.error("Email sending error:", error);
+      console.error("Registration/Email sending error:", error);
+      const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred.";
       toast({
-        title: "Registration Submitted",
-        description: "Your registration was submitted, but there was an error sending the approval notification. Please contact dev@akbarafriansyah.my.id directly.",
+        title: "Registration Error",
+        description: `Your registration was submitted, but there was an error: ${errorMessage}. Please contact muhamad.afriansyah@dsv.com directly if this issue persists.`,
         variant: "destructive",
         duration: 10000,
       });
     }
-
-    // console.log("Superuser registration data:", data);
-    // toast({
-    //   title: "Registration Submitted",
-    //   description: "Your superuser registration is pending approval from dev@akbarafriansyah.my.id.",
-    //   duration: 5000,
-    // });
-    
-    // Simulate submission
-    setTimeout(() => {
-      router.push("/auth/login");
-    }, 2000);
   };
 
   return (
@@ -96,7 +90,7 @@ export default function RegisterPage() {
               <Info className="h-4 w-4" />
               <AlertTitle className="font-headline">Approval Required</AlertTitle>
               <AlertDescription>
-                Superuser registrations require manual approval by the system administrator (dev@akbarafriansyah.my.id). You will be notified upon approval.
+                Superuser registrations require manual approval by the system administrator (muhamad.afriansyah@dsv.com). You will be notified upon approval.
               </AlertDescription>
             </Alert>
             <FormField
