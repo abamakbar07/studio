@@ -1,3 +1,4 @@
+
 "use client";
 
 import { Button } from "@/components/ui/button";
@@ -10,10 +11,12 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Info } from "lucide-react";
 
 const loginSchema = z.object({
   email: z.string().email({ message: "Invalid email address." }),
-  password: z.string().min(6, { message: "Password must be at least 6 characters." }),
+  password: z.string().min(1, { message: "Password is required." }), // Min 1 for presence, actual validation server-side
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -30,16 +33,41 @@ export default function LoginPage() {
   });
 
   const onSubmit = async (data: LoginFormValues) => {
-    // Placeholder for actual login logic
-    console.log("Login data:", data);
-    toast({
-      title: "Login Attempted",
-      description: "Login functionality is a placeholder. Redirecting to dashboard.",
-    });
-    // Simulate successful login
-    setTimeout(() => {
-      router.push("/dashboard");
-    }, 1000);
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+
+      const result = await res.json();
+
+      if (!res.ok) {
+        throw new Error(result.message || 'Login failed. Please check your credentials.');
+      }
+      
+      toast({
+        title: "Login Successful",
+        description: result.message || "Welcome back!",
+      });
+
+      // Store user data in localStorage (simple client-side session)
+      // WARNING: For a real app, use secure session management (e.g., next-auth, JWTs in httpOnly cookies managed by server)
+      if (result.user) {
+        localStorage.setItem('stockflow-user', JSON.stringify(result.user));
+      }
+      
+      router.push("/dashboard"); // Redirect to dashboard
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred during login.";
+      toast({
+        title: "Login Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+      console.error("Login error:", error);
+    }
   };
 
   return (
@@ -51,6 +79,14 @@ export default function LoginPage() {
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)}>
           <CardContent className="space-y-4">
+            <Alert variant="default">
+              <Info className="h-4 w-4" />
+              <AlertTitle className="font-headline">Important Notes</AlertTitle>
+              <AlertDescription>
+                Ensure your email is verified and your account is approved (and activated for admins) to log in.
+                <br /><strong>Security Warning:</strong> This login uses plain text password comparison for demonstration. Implement password hashing (e.g., bcrypt) in a real application.
+              </AlertDescription>
+            </Alert>
             <FormField
               control={form.control}
               name="email"

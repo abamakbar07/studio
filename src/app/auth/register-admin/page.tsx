@@ -14,6 +14,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { USER_ROLES } from "@/lib/constants";
 import type { UserRole } from "@/lib/types";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Info } from "lucide-react";
 
 const registerAdminSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }),
@@ -57,34 +59,25 @@ export default function RegisterAdminPage() {
         body: JSON.stringify({ 
           name: data.name, 
           email: data.email, 
+          password: data.password,
           role: data.role,
           superuserEmail: data.superuserEmail,
-          // password: data.password // Password not directly stored in Firestore for user info, but sent for potential Firebase Auth integration
         }),
       });
 
-      if (!res.ok) {
-        let errorData;
-        try {
-          errorData = await res.json();
-        } catch (e) {
-          // If parsing JSON fails, use status text or a generic message
-           throw new Error(res.statusText || 'Failed to register admin user. Server returned an unexpected response.');
-        }
-        throw new Error(errorData.message || 'Failed to register admin user');
-      }
-
       const result = await res.json();
+      if (!res.ok) {
+           throw new Error(result.message || 'Failed to register admin user. Server returned an unexpected response.');
+      }
 
       toast({
         title: "Admin Registration Submitted",
-        description: "Admin account created. You can now log in.",
-        duration: 5000,
+        description: result.message || "Please check your email to verify. Account requires superuser approval and activation.",
+        duration: 10000,
       });
       
-      setTimeout(() => {
-        router.push("/auth/login");
-      }, 2000);
+      // Don't redirect immediately
+      // router.push("/auth/login");
 
     } catch (error) {
       console.error("Admin registration error:", error);
@@ -93,7 +86,7 @@ export default function RegisterAdminPage() {
         title: "Registration Error",
         description: `Failed to register admin: ${errorMessage}. Please ensure the superuser email is correct and approved.`,
         variant: "destructive",
-        duration: 7000,
+        duration: 10000,
       });
     }
   };
@@ -102,11 +95,22 @@ export default function RegisterAdminPage() {
     <Card className="w-full max-w-md shadow-2xl">
       <CardHeader>
         <CardTitle className="font-headline text-3xl">Register as Admin User</CardTitle>
-        <CardDescription>Create your StockFlow admin account. Requires a valid, approved superuser email for association.</CardDescription>
+        <CardDescription>Create your StockFlow admin account. Requires email verification, superuser approval, and activation.</CardDescription>
       </CardHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)}>
           <CardContent className="space-y-4">
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertTitle className="font-headline">Multi-Step Process</AlertTitle>
+              <AlertDescription>
+                1. Verify your email via a link sent to you.
+                <br />
+                2. A superuser must approve and then activate your account.
+                <br />
+                <strong>Note:</strong> Passwords are currently stored in plain text for demonstration. This is insecure.
+              </AlertDescription>
+            </Alert>
             <FormField
               control={form.control}
               name="name"
@@ -164,7 +168,7 @@ export default function RegisterAdminPage() {
               name="superuserEmail"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Superuser Email</FormLabel>
+                  <FormLabel>Superuser Email (for association)</FormLabel>
                   <FormControl>
                     <Input type="email" placeholder="superuser@example.com" {...field} />
                   </FormControl>

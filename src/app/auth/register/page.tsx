@@ -17,7 +17,7 @@ import { Info } from "lucide-react";
 const registerSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }),
   email: z.string().email({ message: "Invalid email address." }),
-  password: z.string().min(8, { message: "Password must be at least 8 characters." }), // Password for potential future Firebase Auth use
+  password: z.string().min(8, { message: "Password must be at least 8 characters." }),
   confirmPassword: z.string(),
 }).refine(data => data.password === data.confirmPassword, {
   message: "Passwords don't match.",
@@ -49,35 +49,27 @@ export default function RegisterPage() {
         body: JSON.stringify({ name: data.name, email: data.email, password: data.password }),
       });
 
-      if (!res.ok) {
-        let errorData;
-        try {
-          errorData = await res.json();
-        } catch (e) {
-          // If parsing JSON fails, use status text or a generic message
-          throw new Error(res.statusText || 'Failed to submit registration. Server returned an unexpected response.');
-        }
-        throw new Error(errorData.message || 'Failed to submit registration');
-      }
-
       const result = await res.json();
 
+      if (!res.ok) {
+         throw new Error(result.message || 'Failed to submit registration. Server returned an unexpected response.');
+      }
+      
       toast({
         title: "Registration Submitted",
-        description: result.message || "Your superuser registration is pending approval. You will be notified upon approval.",
-        duration: 7000,
+        description: result.message || "Please check your email to verify your address. Administrator approval will follow.",
+        duration: 10000, // Longer duration for important messages
       });
       
-      setTimeout(() => {
-        router.push("/auth/login");
-      }, 2000);
+      // Don't redirect immediately, let user read toast
+      // router.push("/auth/login"); 
 
     } catch (error) {
       console.error("Registration error:", error);
       const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred.";
       toast({
         title: "Registration Error",
-        description: `There was an error submitting your registration: ${errorMessage}. Please contact dev@akbarafriansyah.my.id directly if this issue persists.`,
+        description: `There was an error: ${errorMessage}. Please try again or contact dev@akbarafriansyah.my.id if this persists.`,
         variant: "destructive",
         duration: 10000,
       });
@@ -88,16 +80,20 @@ export default function RegisterPage() {
     <Card className="w-full max-w-md shadow-2xl">
       <CardHeader>
         <CardTitle className="font-headline text-3xl">Register as Superuser</CardTitle>
-        <CardDescription>Create your StockFlow superuser account. Approval by an administrator (dev@akbarafriansyah.my.id) is required.</CardDescription>
+        <CardDescription>Create your StockFlow superuser account. Email verification and administrator approval (dev@akbarafriansyah.my.id) are required.</CardDescription>
       </CardHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)}>
           <CardContent className="space-y-4">
             <Alert>
               <Info className="h-4 w-4" />
-              <AlertTitle className="font-headline">Approval Required</AlertTitle>
+              <AlertTitle className="font-headline">Multi-Step Process</AlertTitle>
               <AlertDescription>
-                Superuser registrations require manual approval by the system administrator (dev@akbarafriansyah.my.id). You will be notified upon approval.
+                1. Verify your email via a link sent to you.
+                <br />
+                2. An administrator (contact: dev@akbarafriansyah.my.id) will approve your account.
+                <br />
+                <strong>Note:</strong> Passwords are currently stored in plain text for demonstration. This is insecure.
               </AlertDescription>
             </Alert>
             <FormField

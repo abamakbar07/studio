@@ -1,27 +1,28 @@
+
 "use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NAV_LINKS } from "@/lib/constants";
-import { cn } from "@/lib/utils";
 import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
   useSidebar,
 } from "@/components/ui/sidebar";
-import type { UserRole } from "@/lib/types"; // Assuming UserRole is defined elsewhere
+import type { UserRole } from "@/lib/types";
 
-// Placeholder for current user role - replace with actual auth logic
-const currentUserRole: UserRole = "superuser"; 
+interface SidebarNavProps {
+  currentUserRole?: UserRole;
+}
 
-export function SidebarNav() {
+export function SidebarNav({ currentUserRole }: SidebarNavProps) {
   const pathname = usePathname();
-  const { setOpenMobile } = useSidebar(); // To close mobile sidebar on nav
+  const { setOpenMobile } = useSidebar(); 
 
-  const filteredNavLinks = NAV_LINKS.filter(link => 
-    link.roles.includes(currentUserRole)
-  );
+  // If no role, show no links or a minimal set.
+  // For now, an empty array if no role, effectively hiding links until role is loaded.
+  const filteredNavLinks = currentUserRole ? NAV_LINKS(currentUserRole) : [];
 
   return (
     <SidebarMenu>
@@ -31,12 +32,12 @@ export function SidebarNav() {
           <SidebarMenuItem key={link.href}>
             <Link href={link.href} passHref legacyBehavior>
               <SidebarMenuButton
-                asChild={false} // Important: SidebarMenuButton should not be asChild if Link is wrapping it
+                asChild={false}
                 isActive={isActive}
                 variant="default"
                 size="default"
                 className="w-full justify-start"
-                onClick={() => setOpenMobile(false)} // Close mobile sidebar on click
+                onClick={() => setOpenMobile(false)} 
                 tooltip={link.label}
               >
                 <link.icon className="h-5 w-5 mr-3" />

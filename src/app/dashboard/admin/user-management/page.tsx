@@ -3,15 +3,16 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { USER_ROLES } from "@/lib/constants";
 import type { User } from "@/lib/types";
-import { MoreHorizontal, PlusCircle, Edit2, Trash2, CheckCircle, ShieldAlert, AlertCircle } from "lucide-react";
-import React, { useState, useEffect } from "react";
+import { MoreHorizontal, PlusCircle, Edit2, Trash2, CheckCircle, ShieldAlert, AlertCircle, MailWarning, UserCheck, UserX } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
 import { db } from "@/lib/firebase/config";
-import { collection, onSnapshot, doc, updateDoc, deleteDoc, Timestamp } from "firebase/firestore";
+import { collection, onSnapshot, doc, updateDoc, deleteDoc } from "firebase/firestore";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,7 +22,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
 export default function UserManagementPage() {
@@ -29,7 +29,7 @@ export default function UserManagementPage() {
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
-  useEffect(() => {
+  const fetchUsers = useCallback(() => {
     setIsLoading(true);
     const usersCollectionRef = collection(db, "users");
     const unsubscribe = onSnapshot(usersCollectionRef, (snapshot) => {
@@ -38,33 +38,50 @@ export default function UserManagementPage() {
       setIsLoading(false);
     }, (error) => {
       console.error("Error fetching users:", error);
-      toast({ title: "Error", description: "Failed to load users from database.", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to load users.", variant: "destructive" });
       setIsLoading(false);
     });
-
-    return () => unsubscribe(); // Cleanup listener on component unmount
+    return unsubscribe;
   }, [toast]);
 
-  const handleApproveUser = async (userId: string) => {
+  useEffect(() => {
+    const unsubscribe = fetchUsers();
+    return () => unsubscribe();
+  }, [fetchUsers]);
+
+  const updateUserField = async (userId: string, field: Partial<User>, successMessage: string) => {
     const userDocRef = doc(db, "users", userId);
     try {
-      await updateDoc(userDocRef, { 
-        approved: true,
-        updatedAt: new Date().toISOString(),
-      });
-      toast({ title: "User Approved", description: `User has been approved successfully.` });
+      await updateDoc(userDocRef, { ...field, updatedAt: new Date().toISOString() });
+      toast({ title: "Success", description: successMessage });
     } catch (error) {
-      console.error("Error approving user:", error);
-      toast({ title: "Error", description: "Failed to approve user.", variant: "destructive" });
+      console.error(`Error updating user ${userId}:`, error);
+      toast({ title: "Error", description: `Failed to update user. ${error instanceof Error ? error.message : ''}`, variant: "destructive" });
     }
+  };
+
+  const handleApproveUser = (userId: string, role: UserRole) => {
+    const message = role === 'superuser' 
+      ? `Superuser ${userId} approved and activated.`
+      : `Admin user ${userId} approved. They can now be activated.`;
+    // Superusers are activated immediately upon approval. Admins need separate activation.
+    const updates: Partial<User> = role === 'superuser' ? { approved: true, isActive: true } : { approved: true };
+    updateUserField(userId, updates, message);
+  };
+
+  const handleActivateUser = (userId: string) => {
+     updateUserField(userId, { isActive: true }, `User ${userId} has been activated.`);
+  };
+  
+  const handleDeactivateUser = (userId: string) => {
+    updateUserField(userId, { isActive: false }, `User ${userId} has been deactivated.`);
   };
 
   const handleDeleteUser = async (userId: string) => {
     const userDocRef = doc(db, "users", userId);
     try {
       await deleteDoc(userDocRef);
-      toast({ title: "User Deleted", description: `User has been deleted successfully.` });
-      // Users state will update via onSnapshot
+      toast({ title: "User Deleted", description: `User ${userId} has been deleted successfully.` });
     } catch (error) {
       console.error("Error deleting user:", error);
       toast({ title: "Error", description: "Failed to delete user.", variant: "destructive" });
@@ -72,12 +89,10 @@ export default function UserManagementPage() {
   };
   
   const openEditUserDialog = (user: User) => {
-    toast({ title: "Edit User (Placeholder)", description: `Editing user ${user.email}. This feature is not yet fully implemented with Firestore.`});
-    // Placeholder: Actual implementation would involve a dialog and Firestore update logic.
+    toast({ title: "Edit User (Placeholder)", description: `Editing user ${user.email}. This feature is not yet implemented.`});
   }
   const openAddUserDialog = () => {
-    toast({ title: "Add User (Placeholder)", description: `Adding new user. This feature is not yet fully implemented with Firestore.`});
-     // Placeholder: Actual implementation would involve a dialog and Firestore creation logic.
+    toast({ title: "Add User (Placeholder)", description: `Adding new user. This feature is not yet implemented.`});
   }
 
   if (isLoading) {
@@ -90,7 +105,7 @@ export default function UserManagementPage() {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle className="font-headline text-2xl">User Management</CardTitle>
-            <CardDescription>Manage admin users and their roles. Superuser approvals are handled here.</CardDescription>
+            <CardDescription>Manage users, their roles, approval, and activation status.</CardDescription>
           </div>
           <Button onClick={openAddUserDialog}>
             <PlusCircle className="mr-2 h-5 w-5" /> Add New User
@@ -98,7 +113,7 @@ export default function UserManagementPage() {
         </CardHeader>
         <CardContent>
           {users.length === 0 ? (
-            <p className="text-muted-foreground">No users found in the database.</p>
+            <p className="text-muted-foreground">No users found.</p>
           ) : (
             <Table>
               <TableHeader>
@@ -106,7 +121,7 @@ export default function UserManagementPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Role</TableHead>
-                  <TableHead>Status / Superuser</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Created At</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -117,20 +132,36 @@ export default function UserManagementPage() {
                     <TableCell className="font-medium">{user.name || 'N/A'}</TableCell>
                     <TableCell>{user.email}</TableCell>
                     <TableCell>
-                      <span className="px-2 py-1 text-xs rounded-full bg-primary/10 text-primary capitalize">
+                      <Badge variant={user.role === 'superuser' ? "default" : "secondary"} className="capitalize">
                         {USER_ROLES.find(r => r.value === user.role)?.label || user.role}
-                      </span>
+                      </Badge>
                     </TableCell>
                     <TableCell>
-                      {user.role === 'superuser' ? (
-                        user.approved ? (
-                          <span className="flex items-center text-green-600"><CheckCircle className="mr-1 h-4 w-4" /> Approved</span>
-                        ) : (
-                          <span className="flex items-center text-orange-500"><ShieldAlert className="mr-1 h-4 w-4" /> Pending Approval</span>
-                        )
-                      ) : (
-                        <span className="text-sm text-muted-foreground">{user.superuserEmail || 'N/A'}</span>
-                      )}
+                      <div className="flex flex-col gap-1">
+                        {!user.emailVerified && (
+                          <Badge variant="outline" className="text-amber-600 border-amber-500">
+                            <MailWarning className="mr-1 h-3 w-3" /> Email Unverified
+                          </Badge>
+                        )}
+                        {!user.approved && (
+                          <Badge variant="outline" className="text-orange-600 border-orange-500">
+                            <ShieldAlert className="mr-1 h-3 w-3" /> Pending Approval
+                          </Badge>
+                        )}
+                        {user.approved && !user.isActive && user.role !== 'superuser' && (
+                           <Badge variant="outline" className="text-blue-600 border-blue-500">
+                             <UserX className="mr-1 h-3 w-3" /> Pending Activation
+                           </Badge>
+                        )}
+                        {user.approved && user.isActive && user.emailVerified && (
+                           <Badge variant="outline" className="text-green-600 border-green-500">
+                             <UserCheck className="mr-1 h-3 w-3" /> Active
+                           </Badge>
+                        )}
+                         {user.role !== 'superuser' && user.superuserEmail && (
+                           <span className="text-xs text-muted-foreground">Managed by: {user.superuserEmail}</span>
+                         )}
+                      </div>
                     </TableCell>
                     <TableCell>{user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}</TableCell>
                     <TableCell className="text-right">
@@ -141,13 +172,24 @@ export default function UserManagementPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          {user.role === 'superuser' && !user.approved && (
-                             <DropdownMenuItem onClick={() => handleApproveUser(user.id)}>
-                                <CheckCircle className="mr-2 h-4 w-4 text-green-500" /> Approve Superuser
+                          {!user.approved && user.emailVerified && ( // Can only approve if email is verified
+                             <DropdownMenuItem onClick={() => handleApproveUser(user.id, user.role)}>
+                                <CheckCircle className="mr-2 h-4 w-4 text-green-500" /> Approve User
                               </DropdownMenuItem>
                           )}
+                          {user.approved && !user.isActive && user.role !== 'superuser' && (
+                             <DropdownMenuItem onClick={() => handleActivateUser(user.id)}>
+                                <UserCheck className="mr-2 h-4 w-4 text-blue-500" /> Activate User
+                              </DropdownMenuItem>
+                          )}
+                          {user.approved && user.isActive && user.role !== 'superuser' && (
+                             <DropdownMenuItem onClick={() => handleDeactivateUser(user.id)} className="text-orange-600">
+                                <UserX className="mr-2 h-4 w-4" /> Deactivate User
+                              </DropdownMenuItem>
+                          )}
+                          <DropdownMenuSeparator />
                           <DropdownMenuItem onClick={() => openEditUserDialog(user)}>
-                            <Edit2 className="mr-2 h-4 w-4" /> Edit User
+                            <Edit2 className="mr-2 h-4 w-4" /> Edit User (Placeholder)
                           </DropdownMenuItem>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
@@ -159,7 +201,7 @@ export default function UserManagementPage() {
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  This action cannot be undone. This will permanently delete the user <strong className="text-foreground">{user.email}</strong>.
+                                  This will permanently delete the user <strong className="text-foreground">{user.email}</strong>. This action cannot be undone.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>

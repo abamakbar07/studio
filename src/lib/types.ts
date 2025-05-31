@@ -4,10 +4,22 @@ export type UserRole = "superuser" | "admin_input" | "admin_doc_control" | "admi
 export interface User {
   id: string; // Firestore document ID
   email: string;
+  password?: string; // Store hashed password in a real app
   role: UserRole;
   name?: string;
-  approved?: boolean; // For superuser status
+  
+  emailVerified?: boolean;
+  verificationToken?: string | null;
+  verificationTokenExpires?: string | null; // ISO string
+
+  approved?: boolean; // For superuser status & admin approval
+  approvalToken?: string | null;
+  approvalTokenExpires?: string | null; // ISO string for superuser approval link
+
+  isActive?: boolean; // For admin activation after approval
+
   superuserEmail?: string; // For admin registration, linking to a superuser
+  
   createdAt: string; // ISO string representation of Timestamp
   updatedAt?: string; // ISO string representation of Timestamp
 }
