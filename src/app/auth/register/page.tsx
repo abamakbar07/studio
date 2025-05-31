@@ -40,12 +40,43 @@ export default function RegisterPage() {
 
   const onSubmit = async (data: RegisterFormValues) => {
     // Placeholder for actual registration logic
-    console.log("Superuser registration data:", data);
-    toast({
-      title: "Registration Submitted",
-      description: "Your superuser registration is pending approval from dev@akbarafriansyah.my.id.",
-      duration: 5000,
-    });
+    // Send email to administrator for approval
+    try {
+      const res = await fetch('/api/send-approval-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name: data.name, email: data.email }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to send approval email');
+      }
+
+      toast({
+        title: "Registration Submitted",
+        description: "Your superuser registration is pending approval. You will be notified upon approval.",
+        duration: 7000,
+      });
+
+    } catch (error) {
+      console.error("Email sending error:", error);
+      toast({
+        title: "Registration Submitted",
+        description: "Your registration was submitted, but there was an error sending the approval notification. Please contact dev@akbarafriansyah.my.id directly.",
+        variant: "destructive",
+        duration: 10000,
+      });
+    }
+
+    // console.log("Superuser registration data:", data);
+    // toast({
+    //   title: "Registration Submitted",
+    //   description: "Your superuser registration is pending approval from dev@akbarafriansyah.my.id.",
+    //   duration: 5000,
+    // });
+    
     // Simulate submission
     setTimeout(() => {
       router.push("/auth/login");
