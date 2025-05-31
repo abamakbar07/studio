@@ -1,13 +1,13 @@
 
 # StockFlow: Efficient Stock On Hand Management
 
-StockFlow is a web application designed to streamline and manage stock-on-hand (SOH) data, physical stock counting processes, and user access control within an organization. It features role-based access, approval workflows, and a clear interface for managing stock-take operations.
+StockFlow is an internal application developed to support the Stock Take process within warehouse operations. The main focus of the application is to assist Admin teams in managing stock count forms, inputting physical count results, and monitoring real-time progress of the Stock Take activities. With role-based access control and clear approval workflows, this tool is designed to improve accuracy, transparency, and efficiency throughout the stock-taking process.
 
 ## Key Features
 
 *   **Role-Based Access Control:**
     *   **Super Administrator:** Configured via environment variables, primarily approves new Super User registrations through email links.
-    *   **Super User:** Manages Admin Users, approves their registrations, and oversees their own set of Admin Users.
+    *   **Super User:** Manages Admin Users, approves their registrations, and oversees their own set of Admin Users involved in stock-take operations.
     *   **Admin Users:** Specific roles (Admin Input, Admin Document Control, Admin Verification) with tailored permissions for different stages of the stock-take process.
 *   **User Registration & Authentication:**
     *   Secure registration for Super Users and Admin Users.
@@ -17,17 +17,17 @@ StockFlow is a web application designed to streamline and manage stock-on-hand (
 *   **Approval Workflows:**
     *   New Super User registrations require approval from the Super Administrator via a unique URL sent by email.
     *   New Admin User registrations require approval and subsequent activation by their designated Super User through the User Management dashboard.
-*   **SOH Data Management (Initial Setup):**
-    *   Placeholder for SOH data file uploads (e.g., `.xlsx`).
-    *   Foundation for processing and utilizing this data for stock counts.
-*   **Forms Management (Initial Setup):**
-    *   Placeholder for generating stock count forms based on SOH data.
-    *   Tracking form statuses (Printed, Counting, Finished, Verified, Inputted).
-    *   Interface for inputting physical count data.
+*   **SOH Data Management:**
+    *   Allows upload of Stock On Hand (SOH) data files (e.g., `.xlsx`) as a baseline for stock counts.
+    *   Tracks uploaded data references.
+*   **Forms Management:**
+    *   Generation of stock count forms based on selected SOH data.
+    *   Tracking form statuses (Printed, Process Counting, Finish Counting, Verified, Inputted).
+    *   Interface for inputting physical count data directly into forms.
 *   **User Management Dashboard:**
     *   Super Users can view, approve, activate, deactivate, and delete Admin Users associated with them.
-*   **Basic Reporting (Placeholder):**
-    *   Initial UI for displaying stock variance and form completion charts.
+*   **Reporting (Initial):**
+    *   Basic UI for displaying stock variance and form completion charts, supporting progress monitoring.
 
 ## Tech Stack
 
@@ -35,9 +35,9 @@ StockFlow is a web application designed to streamline and manage stock-on-hand (
 *   **UI:** ShadCN UI Components, Tailwind CSS
 *   **Backend:** Next.js API Routes
 *   **Database:** Firebase Firestore
-*   **Authentication:** Firebase Authentication (partially, for SDK initialization), Custom logic with bcryptjs
+*   **Authentication:** Custom logic with bcryptjs, HTTP-only cookies for session.
 *   **Email:** Nodemailer
-*   **GenAI (Planned):** Genkit (for potential future AI-driven insights)
+*   **GenAI (Planned):** Genkit (for potential future AI-driven insights to enhance accuracy and efficiency)
 
 ## Setup & Running Locally
 
@@ -66,15 +66,15 @@ EMAIL_PORT=587
 EMAIL_USER=your-email@example.com
 EMAIL_PASS=your-email-password
 # This is the email address that receives approval requests for new Super Users
-ADMINISTRATOR_EMAIL=muhamad.afriansyah@dsv.com
+ADMINISTRATOR_EMAIL=dev@akbarafriansyah.my.id
 
 # Application URL (important for generating verification/approval links)
 # For local development:
-NEXT_PUBLIC_APP_URL=http://localhost:9002 
+NEXT_PUBLIC_APP_URL=http://localhost:9002
 # For production, replace with your deployed app's URL
 ```
 
-**Note:** The `ADMINISTRATOR_EMAIL` is crucial for the Super User approval workflow.
+**Note:** The `ADMINISTRATOR_EMAIL` is crucial for the Super User approval workflow. The `NEXT_PUBLIC_APP_URL` is vital for generating correct email verification and approval links.
 
 ### Installation
 
@@ -103,8 +103,8 @@ The application will typically be available at `http://localhost:9002` (or the p
 ## Important Notes
 
 *   **Password Security:** Passwords are now hashed using `bcryptjs`.
-*   **Session Management:** The current session management uses basic HTTP-only cookies. For production, consider a more robust solution like `next-auth`.
-*   **Firebase Security Rules:** Ensure your Firestore database has appropriate security rules configured to protect user data and control access.
+*   **Session Management:** The current session management uses HTTP-only cookies set by API routes. For enhanced security and features, consider `next-auth` for future development.
+*   **Firebase Security Rules:** Ensure your Firestore database has appropriate security rules configured to protect user data and control access based on roles and data ownership.
 
 ## Copyright & License
 
