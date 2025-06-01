@@ -42,10 +42,11 @@ export default function UserManagementPage() {
         const userData = JSON.parse(sessionCookie) as User;
         if (userData?.id && userData?.email && userData?.role) {
           setLoggedInUser(userData);
+          // If superuser, pageStatus will be updated by the data fetching effect (or remain 'loading-session' until then)
+          // If not superuser, they are unauthorized for this page.
           if (userData.role !== 'superuser') {
             setPageStatus('unauthorized'); 
           }
-          // If superuser, pageStatus will be updated by the data fetching effect
         } else {
           console.warn("Session cookie data is incomplete:", userData);
           setLoggedInUser(null);
@@ -97,21 +98,26 @@ export default function UserManagementPage() {
   useEffect(() => { // Effect 2: Fetch data if loggedInUser is a superuser
     let unsubscribe = () => {};
     if (loggedInUser && loggedInUser.role === 'superuser' && loggedInUser.email) {
+       // If we reach here, pageStatus should be 'loading-session' initially from Effect 1 (if superuser).
+       // fetchUsers will then set it to 'loading-data'.
        fetchUsers(loggedInUser.email).then(unsub => { unsubscribe = unsub || (() => {}) });
     } else if (loggedInUser && loggedInUser.role !== 'superuser') {
-      setPageStatus('unauthorized'); // Should be caught by first effect, but as a safeguard
+      // This case should ideally be caught by the first useEffect setting unauthorized,
+      // but acts as a safeguard if loggedInUser is set but isn't a superuser.
+      setPageStatus('unauthorized');
     } else if (!loggedInUser && pageStatus === 'loading-session') {
-      // This case means the first useEffect is still running or determined no session
-      // If it determined no session, pageStatus would be 'unauthorized'
-      // If it's still 'loading-session', we wait.
+      // This means the first useEffect is still running or determined no session cookie
+      // (in which case it would have set pageStatus to 'unauthorized').
+      // If it's still 'loading-session' and !loggedInUser, we wait for first effect to complete.
     }
+
 
     return () => {
       if (typeof unsubscribe === 'function') {
         unsubscribe();
       }
     };
-  }, [loggedInUser, fetchUsers, pageStatus]);
+  }, [loggedInUser, fetchUsers]); // REMOVED pageStatus from dependency array
 
 
   const updateUserField = async (userId: string, field: Partial<User>, successMessage: string) => {
@@ -306,5 +312,6 @@ export default function UserManagementPage() {
     </div>
   );
 }
+    
 
     
