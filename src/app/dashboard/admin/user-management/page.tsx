@@ -86,7 +86,7 @@ export default function UserManagementPage() {
         if (userData?.id && userData?.email && userData?.role) {
           setLoggedInUser(userData);
         } else {
-          setLoggedInUser(null);
+          setLoggedInUser(null); 
         }
       } catch (e) {
         setLoggedInUser(null);
@@ -108,29 +108,29 @@ export default function UserManagementPage() {
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const fetchedUsers: User[] = snapshot.docs.map(docSnapshot => ({ id: docSnapshot.id, ...docSnapshot.data() } as User));
         setUsers(fetchedUsers);
-        if (fetchedUsers.length === 0 && pageStatus !== 'unauthorized') {
+        if (fetchedUsers.length === 0) {
           setPageStatus('no-data');
-        } else if (pageStatus !== 'unauthorized') {
+        } else {
           setPageStatus('authorized');
         }
       }, (error) => {
         toast({ title: "Error", description: "Failed to load users.", variant: "destructive" });
-        if (pageStatus !== 'unauthorized') setPageStatus('error-fetching');
+        setPageStatus('error-fetching');
       });
       return unsubscribe;
     } catch (error) {
       toast({ title: "Error", description: "Failed to initialize user data fetching.", variant: "destructive" });
-      if (pageStatus !== 'unauthorized') setPageStatus('error-fetching');
+      setPageStatus('error-fetching');
       return () => { };
     }
-  }, [toast, pageStatus]);
+  }, [toast]);
 
   useEffect(() => {
     let unsubscribe = () => { };
 
     if (pageStatus === 'loading-session') {
       if (loggedInUser === undefined) {
-        return;
+        return; 
       }
       if (loggedInUser === null) {
         setPageStatus('unauthorized');
@@ -470,4 +470,6 @@ export default function UserManagementPage() {
     </div>
   );
 }
+    
+
     
