@@ -43,7 +43,7 @@ This document outlines potential future enhancements and features for the StockF
     *   Display key operational metrics based on real-time data (e.g., forms in progress, total items counted, overall variance percentage, count accuracy per team/user, progress towards STO completion).
 *   **User Management Enhancements:**
     *   Implement full "Edit User" functionality for Super Users to modify details of their Admin Users (e.g., name, role - with appropriate safeguards).
-    *   Implement "Add New User" functionality directly from the User Management page, allowing Super Users to create Admin Users without them going through the public registration page (streamlining admin team setup).
+    *   [DONE] Implement "Add New User" functionality directly from the User Management page, allowing Super Users to create Admin Users without them going through the public registration page (streamlining admin team setup).
     *   Implement a secure "Forgot Password" / "Password Reset" flow for all users.
     *   Option for Super Users to resend verification emails to unverified Admin Users or resend approval notification emails to themselves (if applicable).
 
@@ -98,3 +98,4 @@ This document outlines potential future enhancements and features for the StockF
     *   Define and test a backup and restore strategy for Firestore data critical to stock-take operations.
 
 This plan provides a roadmap for evolving StockFlow into a more robust, feature-rich, and secure application, specifically tailored to enhancing warehouse stock-take processes. Prioritization of these items will depend on business needs and available resources.
+
