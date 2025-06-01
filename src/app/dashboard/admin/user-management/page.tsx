@@ -29,12 +29,12 @@ import {
 type PageStatus = 'loading-session' | 'loading-data' | 'authorized' | 'unauthorized' | 'no-data' | 'error-fetching';
 
 export default function UserManagementPage() {
-  const [loggedInUser, setLoggedInUser] = useState<User | null>(null);
+  const [loggedInUser, setLoggedInUser] = useState<User | null | undefined>(undefined); // Initial state: undefined
   const [users, setUsers] = useState<User[]>([]);
   const [pageStatus, setPageStatus] = useState<PageStatus>('loading-session');
   const { toast } = useToast();
 
-  // Effect 1: Determine loggedInUser from session cookie
+  // Effect 1: Determine loggedInUser from session cookie. Runs once on mount.
   useEffect(() => {
     console.log("[UserManagement] Effect 1: Checking session cookie.");
     const sessionCookie = Cookies.get('stockflow-session');
@@ -49,17 +49,17 @@ export default function UserManagementPage() {
           console.log("[UserManagement] Effect 1: setLoggedInUser successful with:", userData);
         } else {
           console.warn("[UserManagement] Effect 1: Session cookie data is incomplete or invalid:", userData);
-          setLoggedInUser(null);
+          setLoggedInUser(null); // Treat incomplete cookie as no user
         }
       } catch (e) {
         console.error("[UserManagement] Effect 1: Failed to parse session cookie:", e);
-        setLoggedInUser(null);
+        setLoggedInUser(null); // Treat parse failure as no user
       }
     } else {
       console.log("[UserManagement] Effect 1: No session cookie found.");
-      setLoggedInUser(null);
+      setLoggedInUser(null); // No cookie means no user
     }
-  }, []); // Runs once on mount to establish loggedInUser
+  }, []); 
 
   const fetchUsers = useCallback(async (superuserEmailToFilterBy: string) => {
     console.log(`[UserManagement] fetchUsers: Fetching users for superuser: ${superuserEmailToFilterBy}`);
@@ -96,43 +96,40 @@ export default function UserManagementPage() {
         console.log("[UserManagement] fetchUsers: setPageStatus to 'error-fetching' due to setup error");
         return () => {};
     }
-  }, [toast]); // Removed setPageStatus from dependencies as it's managed internally or by callers
+  }, [toast]); 
 
-  // Effect 2: Handle page status transitions and trigger data fetching
+  // Effect 2: Handle page status transitions and trigger data fetching based on loggedInUser
   useEffect(() => {
-    console.log(`[UserManagement] Effect 2: Current pageStatus: ${pageStatus}, loggedInUser:`, loggedInUser);
+    console.log(`[UserManagement] Effect 2: Current pageStatus: ${pageStatus}, loggedInUser state:`, loggedInUser);
     let unsubscribe = () => {};
 
     if (pageStatus === 'loading-session') {
-      if (loggedInUser === null) {
-        // This condition implies Effect 1 has run and found no user or an invalid one.
-        // It might also mean Effect 1 hasn't set loggedInUser yet if it's the very first run of Effect 2.
-        // Let's wait for loggedInUser to be explicitly null or set.
-        // console.log("[UserManagement] Effect 2: In 'loading-session', loggedInUser is null. Waiting or will set to unauthorized if it remains null.");
-        // If Effect 1 sets loggedInUser to null, this effect will re-run due to `loggedInUser` dependency.
-        // If it's still null then, it's truly no user.
-        if (loggedInUser === null && Cookies.get('stockflow-session') === undefined) { // A more definitive check for no session
-            console.log("[UserManagement] Effect 2: No cookie and loggedInUser is null. Setting 'unauthorized'.");
-            setPageStatus('unauthorized');
-        } else if (loggedInUser === null && Cookies.get('stockflow-session') !== undefined) {
-            // Cookie exists but parsing failed or data incomplete, loggedInUser became null.
-             console.log("[UserManagement] Effect 2: Cookie exists but loggedInUser is null (parse fail/incomplete). Setting 'unauthorized'.");
-             setPageStatus('unauthorized');
-        }
+      if (loggedInUser === undefined) {
+        // Still waiting for Effect 1 to determine user status.
+        console.log("[UserManagement] Effect 2 ('loading-session'): loggedInUser is 'undefined'. Waiting for session check to complete.");
+        return; // Do nothing, wait for loggedInUser to be set by Effect 1
+      }
 
-      } else if (loggedInUser?.role === 'superuser' && loggedInUser?.email) {
-        console.log("[UserManagement] Effect 2: Valid superuser identified. Setting pageStatus to 'loading-data'.");
+      if (loggedInUser === null) {
+        // Effect 1 completed and found no valid user.
+        console.log("[UserManagement] Effect 2 ('loading-session'): loggedInUser is 'null'. Setting pageStatus to 'unauthorized'.");
+        setPageStatus('unauthorized');
+      } else if (loggedInUser.role === 'superuser' && loggedInUser.email) {
+        // Effect 1 found a superuser.
+        console.log("[UserManagement] Effect 2 ('loading-session'): Valid superuser identified. Setting pageStatus to 'loading-data'. User:", loggedInUser);
         setPageStatus('loading-data');
-      } else if (loggedInUser) {
-        console.log("[UserManagement] Effect 2: User is logged in but not a superuser. Setting pageStatus to 'unauthorized'. Role:", loggedInUser?.role);
+      } else {
+        // Effect 1 found a user, but they are not a superuser.
+        console.log("[UserManagement] Effect 2 ('loading-session'): User is logged in but not a superuser. Setting pageStatus to 'unauthorized'. Role:", loggedInUser?.role);
         setPageStatus('unauthorized');
       }
     } else if (pageStatus === 'loading-data') {
       if (loggedInUser?.role === 'superuser' && loggedInUser?.email) {
-        console.log("[UserManagement] Effect 2: pageStatus is 'loading-data'. Fetching users.");
+        console.log("[UserManagement] Effect 2 ('loading-data'): Fetching users for superuser:", loggedInUser.email);
         fetchUsers(loggedInUser.email).then(unsub => { unsubscribe = unsub || (() => {}) });
       } else {
-        console.warn("[UserManagement] Effect 2: pageStatus 'loading-data' but no valid superuser. This shouldn't happen. Setting 'unauthorized'. loggedInUser:", loggedInUser);
+        // This should not happen if 'loading-data' was set correctly, but as a safeguard:
+        console.warn("[UserManagement] Effect 2 ('loading-data'): LoggedInUser is not a superuser or email missing. Setting 'unauthorized'. User:", loggedInUser);
         setPageStatus('unauthorized');
       }
     }
@@ -338,5 +335,6 @@ export default function UserManagementPage() {
     </div>
   );
 }
+    
 
     
