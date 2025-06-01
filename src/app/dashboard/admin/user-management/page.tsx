@@ -23,16 +23,60 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogClose,
+} from "@/components/ui/dialog";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 
 type PageStatus = 'loading-session' | 'loading-data' | 'authorized' | 'unauthorized' | 'no-data' | 'error-fetching';
+
+const addAdminUserSchema = z.object({
+  name: z.string().min(2, { message: "Name must be at least 2 characters." }),
+  email: z.string().email({ message: "Invalid email address." }),
+  password: z.string().min(8, { message: "Password must be at least 8 characters." }),
+  confirmPassword: z.string(),
+  role: z.enum(["admin_input", "admin_doc_control", "admin_verification"], {
+    errorMap: () => ({ message: "Please select a valid admin role." }),
+  }),
+}).refine(data => data.password === data.confirmPassword, {
+  message: "Passwords don't match.",
+  path: ["confirmPassword"],
+});
+
+type AddAdminUserFormValues = z.infer<typeof addAdminUserSchema>;
 
 export default function UserManagementPage() {
   const [loggedInUser, setLoggedInUser] = useState<User | null | undefined>(undefined);
   const [users, setUsers] = useState<User[]>([]);
   const [pageStatus, setPageStatus] = useState<PageStatus>('loading-session');
+  const [isAddUserDialogOpen, setIsAddUserDialogOpen] = useState(false);
   const { toast } = useToast();
+
+  const addUserForm = useForm<AddAdminUserFormValues>({
+    resolver: zodResolver(addAdminUserSchema),
+    defaultValues: {
+      name: "",
+      email: "",
+      password: "",
+      confirmPassword: "",
+      role: undefined,
+    },
+  });
+
+  const adminRolesForSelect = USER_ROLES.filter(role => role.value !== "superuser");
+
 
   useEffect(() => {
     const sessionCookie = Cookies.get('stockflow-session');
@@ -42,15 +86,15 @@ export default function UserManagementPage() {
         if (userData?.id && userData?.email && userData?.role) {
           setLoggedInUser(userData);
         } else {
-          setLoggedInUser(null); 
+          setLoggedInUser(null);
         }
       } catch (e) {
-        setLoggedInUser(null); 
+        setLoggedInUser(null);
       }
     } else {
-      setLoggedInUser(null); 
+      setLoggedInUser(null);
     }
-  }, []); 
+  }, []);
 
   const fetchUsers = useCallback(async (superuserEmailToFilterBy: string) => {
     const usersCollectionRef = collection(db, "users");
@@ -64,29 +108,29 @@ export default function UserManagementPage() {
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const fetchedUsers: User[] = snapshot.docs.map(docSnapshot => ({ id: docSnapshot.id, ...docSnapshot.data() } as User));
         setUsers(fetchedUsers);
-        if (fetchedUsers.length === 0) {
+        if (fetchedUsers.length === 0 && pageStatus !== 'unauthorized') {
           setPageStatus('no-data');
-        } else {
+        } else if (pageStatus !== 'unauthorized') {
           setPageStatus('authorized');
         }
       }, (error) => {
         toast({ title: "Error", description: "Failed to load users.", variant: "destructive" });
-        setPageStatus('error-fetching');
+        if (pageStatus !== 'unauthorized') setPageStatus('error-fetching');
       });
       return unsubscribe;
     } catch (error) {
-        toast({ title: "Error", description: "Failed to initialize user data fetching.", variant: "destructive" });
-        setPageStatus('error-fetching');
-        return () => {};
+      toast({ title: "Error", description: "Failed to initialize user data fetching.", variant: "destructive" });
+      if (pageStatus !== 'unauthorized') setPageStatus('error-fetching');
+      return () => { };
     }
-  }, [toast]); 
+  }, [toast, pageStatus]);
 
   useEffect(() => {
-    let unsubscribe = () => {};
+    let unsubscribe = () => { };
 
     if (pageStatus === 'loading-session') {
       if (loggedInUser === undefined) {
-        return; 
+        return;
       }
       if (loggedInUser === null) {
         setPageStatus('unauthorized');
@@ -97,7 +141,7 @@ export default function UserManagementPage() {
       }
     } else if (pageStatus === 'loading-data') {
       if (loggedInUser?.role === 'superuser' && loggedInUser?.email) {
-        fetchUsers(loggedInUser.email).then(unsub => { unsubscribe = unsub || (() => {}) });
+        fetchUsers(loggedInUser.email).then(unsub => { unsubscribe = unsub || (() => { }) });
       } else {
         setPageStatus('unauthorized');
       }
@@ -117,18 +161,18 @@ export default function UserManagementPage() {
       await updateDoc(userDocRef, { ...field, updatedAt: new Date().toISOString() });
       toast({ title: "Success", description: successMessage });
     } catch (error) {
-      console.error(`Error updating user ${userId}:`, error);
-      toast({ title: "Error", description: `Failed to update user. ${error instanceof Error ? error.message : ''}`, variant: "destructive" });
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      toast({ title: "Error", description: `Failed to update user. ${errorMessage}`, variant: "destructive" });
     }
   };
 
   const handleApproveUser = (userId: string, role: UserRole) => {
-    const message = `Admin user ${USER_ROLES.find(r=>r.value===role)?.label || userId} approved. They can now be activated.`;
+    const message = `Admin user ${USER_ROLES.find(r => r.value === role)?.label || userId} approved. They can now be activated.`;
     updateUserField(userId, { approved: true }, message);
   };
 
   const handleActivateUser = (userId: string) => {
-     updateUserField(userId, { isActive: true }, `User ${userId} has been activated.`);
+    updateUserField(userId, { isActive: true }, `User ${userId} has been activated.`);
   };
 
   const handleDeactivateUser = (userId: string) => {
@@ -141,17 +185,39 @@ export default function UserManagementPage() {
       await deleteDoc(userDocRef);
       toast({ title: "User Deleted", description: `User ${userId} has been deleted successfully.` });
     } catch (error) {
-      console.error("Error deleting user:", error);
       toast({ title: "Error", description: "Failed to delete user.", variant: "destructive" });
     }
   };
 
   const openEditUserDialog = (user: User) => {
-    toast({ title: "Edit User (Placeholder)", description: `Editing user ${user.email}. This feature is not yet implemented.`});
+    toast({ title: "Edit User (Placeholder)", description: `Editing user ${user.email}. This feature is not yet implemented.` });
   }
-  const openAddUserDialog = () => {
-    toast({ title: "Add User (Placeholder)", description: `Adding new user. This feature is not yet implemented.`});
-  }
+
+  const onAddUserSubmit = async (data: AddAdminUserFormValues) => {
+    try {
+      const response = await fetch('/api/admin/create-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: data.name,
+          email: data.email,
+          password: data.password,
+          role: data.role,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to create admin user.');
+      }
+      toast({ title: "Success", description: result.message });
+      setIsAddUserDialogOpen(false);
+      addUserForm.reset();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
+    }
+  };
+
 
   const renderContent = () => {
     switch (pageStatus) {
@@ -162,15 +228,18 @@ export default function UserManagementPage() {
       case 'unauthorized':
         return <p className="text-muted-foreground p-4 text-center">You are not authorized to view this page or manage users.</p>;
       case 'no-data':
-        return <p className="text-muted-foreground p-4 text-center">No admin users found associated with your account. You can register new admin users via the registration page.</p>;
+         if (loggedInUser?.role === 'superuser') {
+           return <p className="text-muted-foreground p-4 text-center">No admin users found associated with your account. Click "Add New User" to create one.</p>;
+         }
+         return <p className="text-muted-foreground p-4 text-center">No users to display.</p>;
       case 'error-fetching':
         return <p className="text-destructive p-4 text-center">Could not load user data. Please try again later.</p>;
       case 'authorized':
         if (users.length === 0 && loggedInUser?.role === 'superuser') {
-             return <p className="text-muted-foreground p-4 text-center">No admin users found associated with your account. You can register new admin users via the registration page.</p>;
+          return <p className="text-muted-foreground p-4 text-center">No admin users found associated with your account. Click "Add New User" to create one.</p>;
         }
         if (users.length === 0) {
-            return <p className="text-muted-foreground p-4 text-center">No users to display.</p>;
+          return <p className="text-muted-foreground p-4 text-center">No users to display.</p>;
         }
         return (
           <Table>
@@ -207,23 +276,23 @@ export default function UserManagementPage() {
                         </Badge>
                       )}
                       {user.emailVerified && user.approved && !user.isActive && (
-                         <Badge variant="outline" className="text-blue-600 border-blue-500">
-                           <UserX className="mr-1 h-3 w-3" /> Pending Activation
-                         </Badge>
+                        <Badge variant="outline" className="text-blue-600 border-blue-500">
+                          <UserX className="mr-1 h-3 w-3" /> Pending Activation
+                        </Badge>
                       )}
                       {user.emailVerified && user.approved && user.isActive && (
-                         <Badge variant="outline" className="text-green-600 border-green-500">
-                           <UserCheck className="mr-1 h-3 w-3" /> Active
-                         </Badge>
+                        <Badge variant="outline" className="text-green-600 border-green-500">
+                          <UserCheck className="mr-1 h-3 w-3" /> Active
+                        </Badge>
                       )}
-                       {user.role !== 'superuser' && user.superuserEmail && (
-                         <span className="text-xs text-muted-foreground">Managed by: {user.superuserEmail}</span>
-                       )}
+                      {user.role !== 'superuser' && user.superuserEmail && (
+                        <span className="text-xs text-muted-foreground">Managed by: {user.superuserEmail}</span>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>{user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}</TableCell>
                   <TableCell className="text-right">
-                     <DropdownMenu>
+                    <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon">
                           <MoreHorizontal className="h-4 w-4" />
@@ -231,19 +300,19 @@ export default function UserManagementPage() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         {user.role !== 'superuser' && user.emailVerified && !user.approved && (
-                           <DropdownMenuItem onClick={() => handleApproveUser(user.id, user.role)}>
-                              <CheckCircle className="mr-2 h-4 w-4 text-green-500" /> Approve User
-                            </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleApproveUser(user.id, user.role)}>
+                            <CheckCircle className="mr-2 h-4 w-4 text-green-500" /> Approve User
+                          </DropdownMenuItem>
                         )}
                         {user.role !== 'superuser' && user.emailVerified && user.approved && !user.isActive && (
-                           <DropdownMenuItem onClick={() => handleActivateUser(user.id)}>
-                              <UserCheck className="mr-2 h-4 w-4 text-blue-500" /> Activate User
-                            </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleActivateUser(user.id)}>
+                            <UserCheck className="mr-2 h-4 w-4 text-blue-500" /> Activate User
+                          </DropdownMenuItem>
                         )}
                         {user.role !== 'superuser' && user.approved && user.isActive && (
-                           <DropdownMenuItem onClick={() => handleDeactivateUser(user.id)} className="text-orange-600 hover:!text-orange-600 focus:text-orange-600">
-                              <UserX className="mr-2 h-4 w-4" /> Deactivate User
-                            </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleDeactivateUser(user.id)} className="text-orange-600 hover:!text-orange-600 focus:text-orange-600">
+                            <UserX className="mr-2 h-4 w-4" /> Deactivate User
+                          </DropdownMenuItem>
                         )}
                         { (user.role !== 'superuser' && (!user.approved || !user.isActive)) && <DropdownMenuSeparator />}
                         <DropdownMenuItem onClick={() => openEditUserDialog(user)}>
@@ -291,17 +360,114 @@ export default function UserManagementPage() {
             <CardTitle className="font-headline text-2xl">User Management</CardTitle>
             <CardDescription>Manage admin users associated with your superuser account.</CardDescription>
           </div>
-          <Button onClick={openAddUserDialog} disabled={pageStatus !== 'authorized' && pageStatus !== 'no-data'}>
-            <PlusCircle className="mr-2 h-5 w-5" /> Add New User (Placeholder)
+          <Button onClick={() => setIsAddUserDialogOpen(true)} disabled={pageStatus !== 'authorized' && pageStatus !== 'no-data'}>
+            <PlusCircle className="mr-2 h-5 w-5" /> Add New User
           </Button>
         </CardHeader>
         <CardContent>
           {renderContent()}
         </CardContent>
       </Card>
+
+      <Dialog open={isAddUserDialogOpen} onOpenChange={setIsAddUserDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="font-headline">Add New Admin User</DialogTitle>
+            <DialogDescription>
+              Create a new admin user. They will be associated with your superuser account and activated immediately.
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...addUserForm}>
+            <form onSubmit={addUserForm.handleSubmit(onAddUserSubmit)} className="space-y-4 py-4">
+              <FormField
+                control={addUserForm.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Full Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Admin User's Name" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={addUserForm.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input type="email" placeholder="admin@example.com" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={addUserForm.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Password</FormLabel>
+                    <FormControl>
+                      <Input type="password" placeholder="••••••••" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={addUserForm.control}
+                name="confirmPassword"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Confirm Password</FormLabel>
+                    <FormControl>
+                      <Input type="password" placeholder="••••••••" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={addUserForm.control}
+                name="role"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Admin Role</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select an admin role" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {adminRolesForSelect.map(role => (
+                          <SelectItem key={role.value} value={role.value}>
+                            {role.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button type="button" variant="outline">Cancel</Button>
+                </DialogClose>
+                <Button type="submit" disabled={addUserForm.formState.isSubmitting}>
+                  {addUserForm.formState.isSubmitting ? "Adding User..." : "Add User"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
-    
-
     
