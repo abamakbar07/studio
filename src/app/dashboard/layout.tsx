@@ -28,43 +28,41 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null | undefined>(undefined); // undefined means loading
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const sessionCookie = Cookies.get('stockflow-session');
     let userData = null;
+
     if (sessionCookie) {
       try {
         userData = JSON.parse(sessionCookie);
+        if (userData?.id && userData?.email && userData?.role) {
+          setCurrentUser(userData);
+        } else {
+          // Invalid cookie structure
+          setCurrentUser(null);
+          Cookies.remove('stockflow-session', { path: '/' }); 
+        }
       } catch (e) {
+        // Error parsing cookie
+        setCurrentUser(null);
         Cookies.remove('stockflow-session', { path: '/' }); 
       }
-    }
-    
-    if (userData?.id) {
-      setCurrentUser(userData);
     } else {
-      const storedUser = localStorage.getItem('stockflow-user');
-      if (storedUser) {
-        try {
-          userData = JSON.parse(storedUser);
-          if (userData?.id) {
-            setCurrentUser(userData);
-          } else {
-            localStorage.removeItem('stockflow-user'); 
-            router.push("/auth/login");
-          }
-        } catch (e) {
-          localStorage.removeItem('stockflow-user');
-          router.push("/auth/login");
-        }
-      } else {
-         router.push("/auth/login");
-      }
+      // No cookie found
+      setCurrentUser(null);
     }
     setIsLoading(false);
-  }, [router]);
+  }, []);
+
+  useEffect(() => {
+    // Redirect if loading is complete and no user is found, and not on an auth page
+    if (!isLoading && !currentUser && !pathname.startsWith('/auth')) {
+      router.push("/auth/login");
+    }
+  }, [currentUser, isLoading, pathname, router]);
 
   const getCurrentPageTitle = () => {
     const currentLink = NAV_LINKS(currentUser?.role).find(link => pathname === link.href || (link.href !== "/dashboard" && pathname.startsWith(link.href)));
@@ -73,18 +71,23 @@ export default function DashboardLayout({
   };
 
   const handleLogout = async () => {
-    localStorage.removeItem('stockflow-user');
+    localStorage.removeItem('stockflow-user'); // Good to clear this as a legacy item if present
     Cookies.remove('stockflow-session', { path: '/' });
-    setCurrentUser(null);
+    setCurrentUser(null); // Update state immediately
     router.push("/auth/login");
   };
 
-  if (isLoading) {
+  if (isLoading || currentUser === undefined) {
      return <div className="flex items-center justify-center min-h-screen"><p>Loading session...</p></div>;
   }
 
+  // If after loading, there's still no currentUser, and we are on a dashboard page,
+  // the redirect in the second useEffect should handle it.
+  // We render children only if currentUser is present, or if it's an auth page (though layout doesn't wrap auth typically).
   if (!currentUser && !pathname.startsWith('/auth')) {
-     return null;
+     // This state should ideally be brief as the redirect kicks in.
+     // Or, if you have public dashboard pages, adjust this logic.
+     return <div className="flex items-center justify-center min-h-screen"><p>Redirecting to login...</p></div>;
   }
 
   return (

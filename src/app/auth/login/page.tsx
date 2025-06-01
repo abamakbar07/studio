@@ -50,10 +50,6 @@ export default function LoginPage() {
         title: "Login Successful",
         description: result.message || "Welcome back!",
       });
-
-      if (result.user) {
-        localStorage.setItem('stockflow-user', JSON.stringify(result.user));
-      }
       
       router.push("/dashboard");
 
