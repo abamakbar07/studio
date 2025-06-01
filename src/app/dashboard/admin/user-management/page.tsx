@@ -34,37 +34,29 @@ export default function UserManagementPage() {
   const [pageStatus, setPageStatus] = useState<PageStatus>('loading-session');
   const { toast } = useToast();
 
-  useEffect(() => { // Effect 1: Determine loggedInUser and initial pageStatus
-    setPageStatus('loading-session');
+  // Effect 1: Determine loggedInUser from session cookie
+  useEffect(() => {
     const sessionCookie = Cookies.get('stockflow-session');
     if (sessionCookie) {
       try {
         const userData = JSON.parse(sessionCookie) as User;
         if (userData?.id && userData?.email && userData?.role) {
           setLoggedInUser(userData);
-          // If superuser, pageStatus will be updated by the data fetching effect (or remain 'loading-session' until then)
-          // If not superuser, they are unauthorized for this page.
-          if (userData.role !== 'superuser') {
-            setPageStatus('unauthorized'); 
-          }
         } else {
           console.warn("Session cookie data is incomplete:", userData);
           setLoggedInUser(null);
-          setPageStatus('unauthorized');
         }
       } catch (e) {
         console.error("Failed to parse session cookie:", e);
         setLoggedInUser(null);
-        setPageStatus('unauthorized');
       }
     } else {
       setLoggedInUser(null);
-      setPageStatus('unauthorized');
     }
-  }, []);
+  }, []); // Runs once on mount to establish loggedInUser
 
   const fetchUsers = useCallback(async (superuserEmailToFilterBy: string) => {
-    setPageStatus('loading-data');
+    // Note: setPageStatus('loading-data') is now handled by the calling effect (Effect 2)
     const usersCollectionRef = collection(db, "users");
     const q = query(
       usersCollectionRef,
@@ -95,29 +87,36 @@ export default function UserManagementPage() {
     }
   }, [toast]);
 
-  useEffect(() => { // Effect 2: Fetch data if loggedInUser is a superuser
+  // Effect 2: Handle page status transitions and trigger data fetching
+  useEffect(() => {
     let unsubscribe = () => {};
-    if (loggedInUser && loggedInUser.role === 'superuser' && loggedInUser.email) {
-       // If we reach here, pageStatus should be 'loading-session' initially from Effect 1 (if superuser).
-       // fetchUsers will then set it to 'loading-data'.
-       fetchUsers(loggedInUser.email).then(unsub => { unsubscribe = unsub || (() => {}) });
-    } else if (loggedInUser && loggedInUser.role !== 'superuser') {
-      // This case should ideally be caught by the first useEffect setting unauthorized,
-      // but acts as a safeguard if loggedInUser is set but isn't a superuser.
-      setPageStatus('unauthorized');
-    } else if (!loggedInUser && pageStatus === 'loading-session') {
-      // This means the first useEffect is still running or determined no session cookie
-      // (in which case it would have set pageStatus to 'unauthorized').
-      // If it's still 'loading-session' and !loggedInUser, we wait for first effect to complete.
-    }
 
+    if (pageStatus === 'loading-session') {
+      if (loggedInUser === null) { // Effect 1 has run and determined no valid session
+        setPageStatus('unauthorized');
+      } else if (loggedInUser?.role === 'superuser' && loggedInUser?.email) {
+        // Valid superuser identified, transition to loading data
+        setPageStatus('loading-data');
+      } else if (loggedInUser) { // Logged in, but not a superuser
+        setPageStatus('unauthorized');
+      }
+      // If loggedInUser is still null, Effect 1 might not have completed. This effect will re-run when loggedInUser changes.
+    } else if (pageStatus === 'loading-data') {
+      if (loggedInUser?.role === 'superuser' && loggedInUser?.email) {
+        // Now actually fetch the data
+        fetchUsers(loggedInUser.email).then(unsub => { unsubscribe = unsub || (() => {}) });
+      } else {
+        // Should not happen if logic is correct, but as a safeguard:
+        setPageStatus('unauthorized'); 
+      }
+    }
 
     return () => {
       if (typeof unsubscribe === 'function') {
         unsubscribe();
       }
     };
-  }, [loggedInUser, fetchUsers]); // REMOVED pageStatus from dependency array
+  }, [loggedInUser, pageStatus, fetchUsers]);
 
 
   const updateUserField = async (userId: string, field: Partial<User>, successMessage: string) => {
@@ -176,10 +175,9 @@ export default function UserManagementPage() {
         return <p className="text-destructive p-4 text-center">Could not load user data. Please try again later.</p>;
       case 'authorized':
         if (users.length === 0 && loggedInUser?.role === 'superuser') {
-             // This case should ideally be caught by 'no-data' status, but as a fallback
              return <p className="text-muted-foreground p-4 text-center">No admin users found associated with your account. You can register new admin users via the registration page.</p>;
         }
-        if (users.length === 0) { // Fallback if somehow authorized but users is empty and not 'no-data'
+        if (users.length === 0) { 
             return <p className="text-muted-foreground p-4 text-center">No users to display.</p>;
         }
         return (
@@ -312,6 +310,8 @@ export default function UserManagementPage() {
     </div>
   );
 }
+    
+
     
 
     
