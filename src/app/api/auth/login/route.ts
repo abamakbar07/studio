@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
     };
 
     cookies().set('stockflow-session', JSON.stringify(sessionData), {
-      httpOnly: true,
+      httpOnly: false, // Temporarily changed to false for client-side access
       secure: process.env.NODE_ENV === 'production',
       maxAge: 60 * 60 * 24 * 7, // 1 week
       path: '/',
