@@ -19,7 +19,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import React, { useEffect, useState } from "react";
 import type { User } from "@/lib/types";
-import Cookies from 'js-cookie'; // For client-side cookie access
+import Cookies from 'js-cookie';
 
 export default function DashboardLayout({
   children,
@@ -32,37 +32,30 @@ export default function DashboardLayout({
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Client-side check for session cookie
     const sessionCookie = Cookies.get('stockflow-session');
     let userData = null;
     if (sessionCookie) {
       try {
         userData = JSON.parse(sessionCookie);
       } catch (e) {
-        console.error("Failed to parse session cookie:", e);
-        Cookies.remove('stockflow-session', { path: '/' }); // Remove invalid cookie
+        Cookies.remove('stockflow-session', { path: '/' }); 
       }
     }
     
     if (userData?.id) {
       setCurrentUser(userData);
     } else {
-      // If no session, try localStorage as a fallback (from previous login logic)
-      // This helps with transition if users were logged in before cookie implementation
       const storedUser = localStorage.getItem('stockflow-user');
       if (storedUser) {
         try {
           userData = JSON.parse(storedUser);
           if (userData?.id) {
             setCurrentUser(userData);
-            // Optionally, re-set the cookie here if it was missing but localStorage had it
-            // For now, we'll assume API login sets the cookie primarily.
           } else {
-            localStorage.removeItem('stockflow-user'); // Clean up invalid localStorage
+            localStorage.removeItem('stockflow-user'); 
             router.push("/auth/login");
           }
         } catch (e) {
-          console.error("Failed to parse localStorage user:", e);
           localStorage.removeItem('stockflow-user');
           router.push("/auth/login");
         }
@@ -80,14 +73,9 @@ export default function DashboardLayout({
   };
 
   const handleLogout = async () => {
-    // Clear client-side session
     localStorage.removeItem('stockflow-user');
     Cookies.remove('stockflow-session', { path: '/' });
     setCurrentUser(null);
-
-    // Optionally: Call a backend logout endpoint to invalidate server-side session/cookie if needed
-    // await fetch('/api/auth/logout', { method: 'POST' });
-
     router.push("/auth/login");
   };
 
@@ -96,8 +84,6 @@ export default function DashboardLayout({
   }
 
   if (!currentUser && !pathname.startsWith('/auth')) {
-     // This case should ideally be handled by the useEffect redirect,
-     // but as a fallback, prevent rendering children if no user and not on auth page.
      return null;
   }
 

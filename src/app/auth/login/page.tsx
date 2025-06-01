@@ -16,7 +16,7 @@ import { Info } from "lucide-react";
 
 const loginSchema = z.object({
   email: z.string().email({ message: "Invalid email address." }),
-  password: z.string().min(1, { message: "Password is required." }), // Min 1 for presence, actual validation server-side
+  password: z.string().min(1, { message: "Password is required." }),
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -51,13 +51,11 @@ export default function LoginPage() {
         description: result.message || "Welcome back!",
       });
 
-      // Store user data in localStorage (simple client-side session)
-      // WARNING: For a real app, use secure session management (e.g., next-auth, JWTs in httpOnly cookies managed by server)
       if (result.user) {
         localStorage.setItem('stockflow-user', JSON.stringify(result.user));
       }
       
-      router.push("/dashboard"); // Redirect to dashboard
+      router.push("/dashboard");
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred during login.";
@@ -66,7 +64,6 @@ export default function LoginPage() {
         description: errorMessage,
         variant: "destructive",
       });
-      console.error("Login error:", error);
     }
   };
 
@@ -84,7 +81,6 @@ export default function LoginPage() {
               <AlertTitle className="font-headline">Important Notes</AlertTitle>
               <AlertDescription>
                 Ensure your email is verified and your account is approved (and activated for admins) to log in.
-                <br /><strong>Security Warning:</strong> This login uses plain text password comparison for demonstration. Implement password hashing (e.g., bcrypt) in a real application.
               </AlertDescription>
             </Alert>
             <FormField

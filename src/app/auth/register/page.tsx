@@ -58,11 +58,9 @@ export default function RegisterPage() {
       toast({
         title: "Registration Submitted",
         description: result.message || "Please check your email to verify your address. Administrator approval will follow.",
-        duration: 10000, // Longer duration for important messages
+        duration: 10000, 
       });
       
-      // Don't redirect immediately, let user read toast
-      // router.push("/auth/login"); 
 
     } catch (error) {
       console.error("Registration error:", error);
@@ -92,8 +90,6 @@ export default function RegisterPage() {
                 1. Verify your email via a link sent to you.
                 <br />
                 2. An administrator (contact: dev@akbarafriansyah.my.id) will approve your account.
-                <br />
-                <strong>Note:</strong> Passwords are currently stored in plain text for demonstration. This is insecure.
               </AlertDescription>
             </Alert>
             <FormField

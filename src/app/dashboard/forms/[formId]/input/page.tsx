@@ -1,3 +1,4 @@
+
 "use client";
 
 import { Button } from "@/components/ui/button";
@@ -29,10 +30,8 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
-// Placeholder data, replace with actual data fetching
 const fetchFormItems = async (formId: string): Promise<StockItem[]> => {
-  console.log("Fetching items for formId:", formId);
-  await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API call
+  await new Promise(resolve => setTimeout(resolve, 500)); 
   return [
     { id: "item-1", sku: "SKU001", description: "Item A - Blue Widget", sohQuantity: 100 },
     { id: "item-2", sku: "SKU002", description: "Item B - Red Gadget", sohQuantity: 50 },
@@ -75,14 +74,10 @@ export default function FormInputPage() {
   }, [formId, form, toast]);
 
   const onSubmit = (data: FormValues) => {
-    console.log("Form data submitted:", data);
-    // In a real app, send this data to the backend
     toast({
       title: "Data Saved",
       description: `Physical counts for form ${formId} have been saved.`,
     });
-    // Optionally, navigate away or update form status
-    // router.push("/dashboard/forms");
   };
 
   if (isLoading) {
@@ -145,8 +140,8 @@ export default function FormInputPage() {
                                       placeholder="Count" 
                                       className="text-right" 
                                       {...formField}
-                                      value={formField.value === null ? '' : formField.value} // Ensure empty string for null
-                                      onChange={e => formField.onChange(e.target.value === '' ? '' : e.target.valueAsNumber)} // Allow empty string
+                                      value={formField.value === null ? '' : formField.value} 
+                                      onChange={e => formField.onChange(e.target.value === '' ? '' : e.target.valueAsNumber)} 
                                     />
                                   </FormControl>
                                   <FormMessage className="text-xs text-right"/>

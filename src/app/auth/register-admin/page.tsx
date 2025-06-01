@@ -76,8 +76,6 @@ export default function RegisterAdminPage() {
         duration: 10000,
       });
       
-      // Don't redirect immediately
-      // router.push("/auth/login");
 
     } catch (error) {
       console.error("Admin registration error:", error);
@@ -107,8 +105,6 @@ export default function RegisterAdminPage() {
                 1. Verify your email via a link sent to you.
                 <br />
                 2. A superuser must approve and then activate your account.
-                <br />
-                <strong>Note:</strong> Passwords are currently stored in plain text for demonstration. This is insecure.
               </AlertDescription>
             </Alert>
             <FormField

@@ -26,8 +26,7 @@ export async function POST(req: NextRequest) {
     const user = { id: userDoc.id, ...userDoc.data() } as User;
 
     if (!user.password) {
-        // This should ideally not happen if registration always hashes a password
-        console.error(`User ${email} has no password stored.`);
+        console.error(`User ${email} may not have a password set or an issue occurred during registration.`);
         return NextResponse.json({ message: 'Authentication error. Please contact support.' }, { status: 500 });
     }
 
@@ -60,7 +59,7 @@ export async function POST(req: NextRequest) {
     };
 
     cookies().set('stockflow-session', JSON.stringify(sessionData), {
-      httpOnly: false, // Temporarily changed to false for client-side access
+      httpOnly: false,
       secure: process.env.NODE_ENV === 'production',
       maxAge: 60 * 60 * 24 * 7, // 1 week
       path: '/',

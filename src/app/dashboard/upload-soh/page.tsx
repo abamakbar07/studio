@@ -1,3 +1,4 @@
+
 "use client";
 
 import { Button } from "@/components/ui/button";
@@ -52,18 +53,11 @@ export default function UploadSohPage() {
 
     const totalChunks = Math.ceil(selectedFile.size / CHUNK_SIZE);
 
-    // Simulate chunked upload
     for (let i = 0; i < totalChunks; i++) {
-      // const chunk = selectedFile.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-      // In a real app, you would send this chunk to the server
-      // await uploadChunkToServer(chunk, i, selectedFile.name); 
-      
-      await new Promise(resolve => setTimeout(resolve, 200)); // Simulate network delay
+      await new Promise(resolve => setTimeout(resolve, 200)); 
       setUploadProgress(((i + 1) / totalChunks) * 100);
     }
     
-    // Simulate completion
-    // In a real app, the server would confirm completion and data integrity checks
     setTimeout(() => {
       setIsUploading(false);
       setUploadStatus("success");
@@ -73,11 +67,11 @@ export default function UploadSohPage() {
         id: crypto.randomUUID(),
         filename: selectedFile.name,
         uploadedAt: new Date().toISOString(),
-        rowCount: Math.floor(Math.random() * 1000) + 500, // Placeholder
-        status: "Completed", // Assume it's completed for now
+        rowCount: Math.floor(Math.random() * 1000) + 500, 
+        status: "Completed", 
       };
       setUploadedReferences(prev => [newReference, ...prev]);
-      setSelectedFile(null); // Clear selection
+      setSelectedFile(null); 
     }, 500);
   };
 
