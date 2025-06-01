@@ -13,7 +13,6 @@ import { MoreHorizontal, PlusCircle, Edit2, Trash2, CheckCircle, ShieldAlert, Ma
 import React, { useState, useEffect, useCallback } from "react";
 import { db } from "@/lib/firebase/config";
 import { collection, onSnapshot, doc, updateDoc, deleteDoc, query, where } from "firebase/firestore";
-import Cookies from 'js-cookie';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,12 +32,13 @@ import {
   DialogTitle,
   DialogClose,
 } from "@/components/ui/dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { useUser } from "@/app/dashboard/layout"; // Import useUser from DashboardLayout
 
 type PageStatus = 'loading-session' | 'loading-data' | 'authorized' | 'unauthorized' | 'no-data' | 'error-fetching';
 
@@ -58,7 +58,7 @@ const addAdminUserSchema = z.object({
 type AddAdminUserFormValues = z.infer<typeof addAdminUserSchema>;
 
 export default function UserManagementPage() {
-  const [loggedInUser, setLoggedInUser] = useState<User | null | undefined>(undefined);
+  const { currentUser, isLoadingUser } = useUser(); // Consume context
   const [users, setUsers] = useState<User[]>([]);
   const [pageStatus, setPageStatus] = useState<PageStatus>('loading-session');
   const [isAddUserDialogOpen, setIsAddUserDialogOpen] = useState(false);
@@ -77,26 +77,8 @@ export default function UserManagementPage() {
 
   const adminRolesForSelect = USER_ROLES.filter(role => role.value !== "superuser");
 
-
-  useEffect(() => {
-    const sessionCookie = Cookies.get('stockflow-session');
-    if (sessionCookie) {
-      try {
-        const userData = JSON.parse(sessionCookie) as User;
-        if (userData?.id && userData?.email && userData?.role) {
-          setLoggedInUser(userData);
-        } else {
-          setLoggedInUser(null); 
-        }
-      } catch (e) {
-        setLoggedInUser(null);
-      }
-    } else {
-      setLoggedInUser(null);
-    }
-  }, []);
-
   const fetchUsers = useCallback(async (superuserEmailToFilterBy: string) => {
+    console.log('[UserManagement] fetchUsers called for:', superuserEmailToFilterBy);
     const usersCollectionRef = collection(db, "users");
     const q = query(
       usersCollectionRef,
@@ -110,49 +92,75 @@ export default function UserManagementPage() {
         setUsers(fetchedUsers);
         if (fetchedUsers.length === 0) {
           setPageStatus('no-data');
+          console.log('[UserManagement] fetchUsers: No data found.');
         } else {
           setPageStatus('authorized');
+          console.log('[UserManagement] fetchUsers: Data fetched, status authorized.');
         }
       }, (error) => {
         toast({ title: "Error", description: "Failed to load users.", variant: "destructive" });
         setPageStatus('error-fetching');
+        console.error('[UserManagement] fetchUsers: Firestore error:', error);
       });
       return unsubscribe;
     } catch (error) {
       toast({ title: "Error", description: "Failed to initialize user data fetching.", variant: "destructive" });
       setPageStatus('error-fetching');
+      console.error('[UserManagement] fetchUsers: Error initializing snapshot:', error);
       return () => { };
     }
   }, [toast]);
 
-  useEffect(() => {
-    let unsubscribe = () => { };
 
-    if (pageStatus === 'loading-session') {
-      if (loggedInUser === undefined) {
-        return; 
+  useEffect(() => {
+    let unsubscribe = () => {};
+    console.log('[UserManagement] Effect (Auth & Data Load) triggered. isLoadingUser:', isLoadingUser, 'currentUser:', currentUser, 'pageStatus:', pageStatus);
+
+    if (isLoadingUser) {
+      setPageStatus('loading-session');
+      console.log('[UserManagement] isLoadingUser is true, setting pageStatus to loading-session.');
+      return; // Wait for user context to load
+    }
+
+    // At this point, isLoadingUser is false
+    if (!currentUser) {
+      setPageStatus('unauthorized');
+      console.log('[UserManagement] No currentUser from context, setting pageStatus to unauthorized.');
+    } else if (currentUser.role === 'superuser' && currentUser.email) {
+      // If user is superuser, and we were previously loading session, or were unauthorized (e.g. due to stale state)
+      // then transition to loading-data. This also covers the initial load.
+      if (pageStatus === 'loading-session' || pageStatus === 'unauthorized' || pageStatus === 'loading-data') {
+         setPageStatus('loading-data'); // Ensure we are in loading-data to trigger fetch
+         console.log('[UserManagement] Superuser identified, ensuring pageStatus is loading-data.');
+         // The actual fetch will happen because pageStatus is now 'loading-data'
+         // and currentUser.email is available.
+        if(currentUser.email) { // double check email before fetching
+            fetchUsers(currentUser.email).then(unsub => { unsubscribe = unsub || (() => {}) });
+        } else {
+            console.error("[UserManagement] Superuser identified but email is missing. Cannot fetch users.");
+            setPageStatus('error-fetching');
+        }
       }
-      if (loggedInUser === null) {
-        setPageStatus('unauthorized');
-      } else if (loggedInUser.role === 'superuser' && loggedInUser.email) {
-        setPageStatus('loading-data');
-      } else {
-        setPageStatus('unauthorized');
-      }
-    } else if (pageStatus === 'loading-data') {
-      if (loggedInUser?.role === 'superuser' && loggedInUser?.email) {
-        fetchUsers(loggedInUser.email).then(unsub => { unsubscribe = unsub || (() => { }) });
-      } else {
-        setPageStatus('unauthorized');
-      }
+      // If already authorized or no-data, it means fetchUsers has run and set the state.
+      // No need to re-trigger fetch unless currentUser.email changes, which is handled by fetchUsers dependencies.
+    } else {
+      setPageStatus('unauthorized');
+      console.log('[UserManagement] User is not superuser or email missing (from context), setting pageStatus to unauthorized.');
     }
 
     return () => {
       if (typeof unsubscribe === 'function') {
+        console.log('[UserManagement] Cleaning up Firestore listener.');
         unsubscribe();
       }
     };
-  }, [loggedInUser, pageStatus, fetchUsers]);
+  // Re-evaluating dependencies:
+  // - currentUser: if this object changes (e.g. user logs out/in), we need to re-evaluate.
+  // - isLoadingUser: when this flips from true to false, we re-evaluate.
+  // - fetchUsers: standard practice to include callbacks from useCallback.
+  // - pageStatus: We need to react to changes in pageStatus to know when to call fetchUsers.
+  // Example: loading-session -> (currentUser becomes superuser) -> loading-data -> (triggers fetch) -> authorized/no-data
+  }, [currentUser, isLoadingUser, fetchUsers, pageStatus]);
 
 
   const updateUserField = async (userId: string, field: Partial<User>, successMessage: string) => {
@@ -220,6 +228,7 @@ export default function UserManagementPage() {
 
 
   const renderContent = () => {
+    console.log('[UserManagement] renderContent called with pageStatus:', pageStatus);
     switch (pageStatus) {
       case 'loading-session':
         return <div className="flex justify-center items-center h-64"><p>Loading session...</p></div>;
@@ -228,14 +237,14 @@ export default function UserManagementPage() {
       case 'unauthorized':
         return <p className="text-muted-foreground p-4 text-center">You are not authorized to view this page or manage users.</p>;
       case 'no-data':
-         if (loggedInUser?.role === 'superuser') {
+         if (currentUser?.role === 'superuser') {
            return <p className="text-muted-foreground p-4 text-center">No admin users found associated with your account. Click "Add New User" to create one.</p>;
          }
          return <p className="text-muted-foreground p-4 text-center">No users to display.</p>;
       case 'error-fetching':
         return <p className="text-destructive p-4 text-center">Could not load user data. Please try again later.</p>;
       case 'authorized':
-        if (users.length === 0 && loggedInUser?.role === 'superuser') {
+        if (users.length === 0 && currentUser?.role === 'superuser') {
           return <p className="text-muted-foreground p-4 text-center">No admin users found associated with your account. Click "Add New User" to create one.</p>;
         }
         if (users.length === 0) {
@@ -352,6 +361,9 @@ export default function UserManagementPage() {
     }
   };
 
+  const isButtonDisabled = pageStatus !== 'authorized' && pageStatus !== 'no-data';
+  console.log('[UserManagement] "Add New User" button disabled state:', isButtonDisabled, 'pageStatus:', pageStatus);
+
   return (
     <div className="space-y-6">
       <Card>
@@ -360,7 +372,7 @@ export default function UserManagementPage() {
             <CardTitle className="font-headline text-2xl">User Management</CardTitle>
             <CardDescription>Manage admin users associated with your superuser account.</CardDescription>
           </div>
-          <Button onClick={() => setIsAddUserDialogOpen(true)} disabled={pageStatus !== 'authorized' && pageStatus !== 'no-data'}>
+          <Button onClick={() => setIsAddUserDialogOpen(true)} disabled={isButtonDisabled}>
             <PlusCircle className="mr-2 h-5 w-5" /> Add New User
           </Button>
         </CardHeader>
@@ -470,6 +482,3 @@ export default function UserManagementPage() {
     </div>
   );
 }
-    
-
-    
