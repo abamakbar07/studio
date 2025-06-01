@@ -22,6 +22,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger, // Added AlertDialogTrigger here
 } from "@/components/ui/alert-dialog";
 import {
   Dialog,
@@ -38,7 +39,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useUser } from "@/app/dashboard/layout"; // Corrected: Use UserContext
+import { useUser } from "@/app/dashboard/layout";
 
 type PageStatus = 'loading-session' | 'loading-data' | 'authorized' | 'unauthorized' | 'no-data' | 'error-fetching';
 
@@ -86,8 +87,8 @@ export default function UserManagementPage() {
 
     if (adminRoleValues.length === 0) {
       setUsers([]);
-      setPageStatus('no-data'); // No admin roles to query for
-      return () => {}; // Return an empty unsubscribe function
+      setPageStatus('no-data'); 
+      return () => {}; 
     }
     
     const q = query(
@@ -116,7 +117,7 @@ export default function UserManagementPage() {
       setPageStatus('error-fetching');
     }
     return unsubscribeSnapshot;
-  }, [toast]); // Removed USER_ROLES from dependencies as it's a constant from outside
+  }, [toast]);
 
 
   useEffect(() => {
@@ -130,14 +131,9 @@ export default function UserManagementPage() {
     if (!currentUser) {
       setPageStatus('unauthorized');
     } else if (currentUser.role === 'superuser' && currentUser.email) {
-      // Trigger fetch only if we are in loading-session, or transitioning to loading-data
-      // This prevents re-fetching if data is already loaded or in error state.
-      if (pageStatus === 'loading-session' || pageStatus === 'unauthorized') { 
-         setPageStatus('loading-data'); // Set to loading-data before fetch
+      if (pageStatus === 'loading-session' || pageStatus === 'unauthorized' || pageStatus === 'loading-data' ) { 
+         if(pageStatus !== 'loading-data') setPageStatus('loading-data');
          fetchUsers(currentUser.email).then(unsub => { unsubscribe = unsub || (() => {}) });
-      } else if (pageStatus === 'loading-data') {
-        // This ensures fetchUsers is called if pageStatus was already loading-data (e.g. retry after error or initial load)
-        fetchUsers(currentUser.email).then(unsub => { unsubscribe = unsub || (() => {}) });
       }
     } else if (currentUser.role !== 'superuser') {
       setPageStatus('unauthorized');
@@ -352,8 +348,7 @@ export default function UserManagementPage() {
     }
   };
 
-  const isButtonDisabled = pageStatus !== 'authorized' && pageStatus !== 'no-data' && pageStatus !== 'error-fetching';
-
+  const isButtonDisabled = !(pageStatus === 'authorized' || pageStatus === 'no-data' || (pageStatus === 'error-fetching' && currentUser?.role === 'superuser'));
 
   return (
     <div className="space-y-6">
