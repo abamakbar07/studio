@@ -38,7 +38,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useUser } from "@/app/dashboard/layout"; // Import useUser from DashboardLayout
+import { useUser } from "@/app/dashboard/layout"; // Corrected: Use UserContext
 
 type PageStatus = 'loading-session' | 'loading-data' | 'authorized' | 'unauthorized' | 'no-data' | 'error-fetching';
 
@@ -58,7 +58,7 @@ const addAdminUserSchema = z.object({
 type AddAdminUserFormValues = z.infer<typeof addAdminUserSchema>;
 
 export default function UserManagementPage() {
-  const { currentUser, isLoadingUser } = useUser(); // Consume context
+  const { currentUser, isLoadingUser } = useUser();
   const [users, setUsers] = useState<User[]>([]);
   const [pageStatus, setPageStatus] = useState<PageStatus>('loading-session');
   const [isAddUserDialogOpen, setIsAddUserDialogOpen] = useState(false);
@@ -78,89 +78,80 @@ export default function UserManagementPage() {
   const adminRolesForSelect = USER_ROLES.filter(role => role.value !== "superuser");
 
   const fetchUsers = useCallback(async (superuserEmailToFilterBy: string) => {
-    console.log('[UserManagement] fetchUsers called for:', superuserEmailToFilterBy);
     const usersCollectionRef = collection(db, "users");
+    
+    const adminRoleValues = USER_ROLES
+      .filter(role => role.value !== 'superuser')
+      .map(role => role.value as string);
+
+    if (adminRoleValues.length === 0) {
+      setUsers([]);
+      setPageStatus('no-data'); // No admin roles to query for
+      return () => {}; // Return an empty unsubscribe function
+    }
+    
     const q = query(
       usersCollectionRef,
-      where('role', '!=', 'superuser'),
+      where('role', 'in', adminRoleValues),
       where('superuserEmail', '==', superuserEmailToFilterBy)
     );
 
+    let unsubscribeSnapshot = () => {};
     try {
-      const unsubscribe = onSnapshot(q, (snapshot) => {
+      unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
         const fetchedUsers: User[] = snapshot.docs.map(docSnapshot => ({ id: docSnapshot.id, ...docSnapshot.data() } as User));
         setUsers(fetchedUsers);
         if (fetchedUsers.length === 0) {
           setPageStatus('no-data');
-          console.log('[UserManagement] fetchUsers: No data found.');
         } else {
           setPageStatus('authorized');
-          console.log('[UserManagement] fetchUsers: Data fetched, status authorized.');
         }
       }, (error) => {
-        toast({ title: "Error", description: "Failed to load users.", variant: "destructive" });
+        toast({ title: "Error Loading Users", description: `Failed to load users: ${error.message}. Ensure Firestore indexes are configured if prompted.`, variant: "destructive", duration: 10000 });
         setPageStatus('error-fetching');
-        console.error('[UserManagement] fetchUsers: Firestore error:', error);
       });
-      return unsubscribe;
     } catch (error) {
-      toast({ title: "Error", description: "Failed to initialize user data fetching.", variant: "destructive" });
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      toast({ title: "Error Initializing Fetch", description: `Failed to initialize user data fetching: ${errorMessage}`, variant: "destructive" });
       setPageStatus('error-fetching');
-      console.error('[UserManagement] fetchUsers: Error initializing snapshot:', error);
-      return () => { };
     }
-  }, [toast]);
+    return unsubscribeSnapshot;
+  }, [toast]); // Removed USER_ROLES from dependencies as it's a constant from outside
 
 
   useEffect(() => {
     let unsubscribe = () => {};
-    console.log('[UserManagement] Effect (Auth & Data Load) triggered. isLoadingUser:', isLoadingUser, 'currentUser:', currentUser, 'pageStatus:', pageStatus);
 
     if (isLoadingUser) {
       setPageStatus('loading-session');
-      console.log('[UserManagement] isLoadingUser is true, setting pageStatus to loading-session.');
-      return; // Wait for user context to load
+      return;
     }
 
-    // At this point, isLoadingUser is false
     if (!currentUser) {
       setPageStatus('unauthorized');
-      console.log('[UserManagement] No currentUser from context, setting pageStatus to unauthorized.');
     } else if (currentUser.role === 'superuser' && currentUser.email) {
-      // If user is superuser, and we were previously loading session, or were unauthorized (e.g. due to stale state)
-      // then transition to loading-data. This also covers the initial load.
-      if (pageStatus === 'loading-session' || pageStatus === 'unauthorized' || pageStatus === 'loading-data') {
-         setPageStatus('loading-data'); // Ensure we are in loading-data to trigger fetch
-         console.log('[UserManagement] Superuser identified, ensuring pageStatus is loading-data.');
-         // The actual fetch will happen because pageStatus is now 'loading-data'
-         // and currentUser.email is available.
-        if(currentUser.email) { // double check email before fetching
-            fetchUsers(currentUser.email).then(unsub => { unsubscribe = unsub || (() => {}) });
-        } else {
-            console.error("[UserManagement] Superuser identified but email is missing. Cannot fetch users.");
-            setPageStatus('error-fetching');
-        }
+      // Trigger fetch only if we are in loading-session, or transitioning to loading-data
+      // This prevents re-fetching if data is already loaded or in error state.
+      if (pageStatus === 'loading-session' || pageStatus === 'unauthorized') { 
+         setPageStatus('loading-data'); // Set to loading-data before fetch
+         fetchUsers(currentUser.email).then(unsub => { unsubscribe = unsub || (() => {}) });
+      } else if (pageStatus === 'loading-data') {
+        // This ensures fetchUsers is called if pageStatus was already loading-data (e.g. retry after error or initial load)
+        fetchUsers(currentUser.email).then(unsub => { unsubscribe = unsub || (() => {}) });
       }
-      // If already authorized or no-data, it means fetchUsers has run and set the state.
-      // No need to re-trigger fetch unless currentUser.email changes, which is handled by fetchUsers dependencies.
-    } else {
+    } else if (currentUser.role !== 'superuser') {
       setPageStatus('unauthorized');
-      console.log('[UserManagement] User is not superuser or email missing (from context), setting pageStatus to unauthorized.');
+    } else if (!currentUser.email) {
+        setPageStatus('error-fetching');
+        toast({title: "Error", description:"Superuser email missing in session.", variant: "destructive"});
     }
 
     return () => {
       if (typeof unsubscribe === 'function') {
-        console.log('[UserManagement] Cleaning up Firestore listener.');
         unsubscribe();
       }
     };
-  // Re-evaluating dependencies:
-  // - currentUser: if this object changes (e.g. user logs out/in), we need to re-evaluate.
-  // - isLoadingUser: when this flips from true to false, we re-evaluate.
-  // - fetchUsers: standard practice to include callbacks from useCallback.
-  // - pageStatus: We need to react to changes in pageStatus to know when to call fetchUsers.
-  // Example: loading-session -> (currentUser becomes superuser) -> loading-data -> (triggers fetch) -> authorized/no-data
-  }, [currentUser, isLoadingUser, fetchUsers, pageStatus]);
+  }, [currentUser, isLoadingUser, fetchUsers, pageStatus, toast]);
 
 
   const updateUserField = async (userId: string, field: Partial<User>, successMessage: string) => {
@@ -193,13 +184,14 @@ export default function UserManagementPage() {
       await deleteDoc(userDocRef);
       toast({ title: "User Deleted", description: `User ${userId} has been deleted successfully.` });
     } catch (error) {
-      toast({ title: "Error", description: "Failed to delete user.", variant: "destructive" });
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      toast({ title: "Error", description: `Failed to delete user. ${errorMessage}`, variant: "destructive" });
     }
   };
 
   const openEditUserDialog = (user: User) => {
     toast({ title: "Edit User (Placeholder)", description: `Editing user ${user.email}. This feature is not yet implemented.` });
-  }
+  };
 
   const onAddUserSubmit = async (data: AddAdminUserFormValues) => {
     try {
@@ -228,7 +220,6 @@ export default function UserManagementPage() {
 
 
   const renderContent = () => {
-    console.log('[UserManagement] renderContent called with pageStatus:', pageStatus);
     switch (pageStatus) {
       case 'loading-session':
         return <div className="flex justify-center items-center h-64"><p>Loading session...</p></div>;
@@ -242,7 +233,7 @@ export default function UserManagementPage() {
          }
          return <p className="text-muted-foreground p-4 text-center">No users to display.</p>;
       case 'error-fetching':
-        return <p className="text-destructive p-4 text-center">Could not load user data. Please try again later.</p>;
+        return <p className="text-destructive p-4 text-center">Could not load user data. Please check console for errors and ensure Firestore indexes are set up if required.</p>;
       case 'authorized':
         if (users.length === 0 && currentUser?.role === 'superuser') {
           return <p className="text-muted-foreground p-4 text-center">No admin users found associated with your account. Click "Add New User" to create one.</p>;
@@ -361,8 +352,8 @@ export default function UserManagementPage() {
     }
   };
 
-  const isButtonDisabled = pageStatus !== 'authorized' && pageStatus !== 'no-data';
-  console.log('[UserManagement] "Add New User" button disabled state:', isButtonDisabled, 'pageStatus:', pageStatus);
+  const isButtonDisabled = pageStatus !== 'authorized' && pageStatus !== 'no-data' && pageStatus !== 'error-fetching';
+
 
   return (
     <div className="space-y-6">
@@ -482,3 +473,5 @@ export default function UserManagementPage() {
     </div>
   );
 }
+
+    
