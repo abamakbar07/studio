@@ -1,3 +1,4 @@
+
 "use client";
 
 import { Button } from "@/components/ui/button";
@@ -40,7 +41,7 @@ export default function FormsManagementPage() {
       formName: `New Form - ${new Date().toLocaleTimeString()}`,
       dataReference: refFilename,
       status: "Printed",
-      itemCount: Math.floor(Math.random() * 200) + 50, // Placeholder
+      itemCount: Math.floor(Math.random() * 200) + 50,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -60,7 +61,7 @@ export default function FormsManagementPage() {
   const deleteForm = (formId: string) => {
     setForms(prevForms => prevForms.filter(form => form.id !== formId));
     toast({ title: "Form Deleted", description: `Form ${formId} has been deleted.` });
-  }
+  };
 
   return (
     <div className="space-y-6">
