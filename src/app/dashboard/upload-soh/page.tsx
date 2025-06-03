@@ -10,15 +10,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import type { SOHDataReference, STOProject, User, SOHDataReferenceStatus } from "@/lib/types";
 import { UploadCloud, CheckCircle, XCircle, FileCheck2, AlertCircle, FolderKanban, Info, AlertTriangle, Loader2 } from "lucide-react";
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react"; // Added useRef
 import { useUser } from "@/app/dashboard/layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import Link from "next/link";
 import { format } from 'date-fns';
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
-// CHUNK_SIZE is not used for client-side actual chunking here, but for progress simulation.
-// Actual server-side processing will handle the full file.
 
 interface UploadResult {
   message: string;
@@ -31,14 +29,15 @@ interface UploadResult {
 export default function UploadSohPage() {
   const { currentUser, selectedProject, isLoadingUser } = useUser();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploadProgress, setUploadProgress] = useState(0); // For visual feedback
-  const [isProcessing, setIsProcessing] = useState(false); // Combined uploading/server processing state
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [currentStatusMessage, setCurrentStatusMessage] = useState<string | null>(null);
-  const [uploadedReferences, setUploadedReferences] = useState<SOHDataReference[]>([]); // Will be fetched
+  const [uploadedReferences, setUploadedReferences] = useState<SOHDataReference[]>([]);
   const [userProjects, setUserProjects] = useState<STOProject[]>([]);
   const [projectForUpload, setProjectForUpload] = useState<string | undefined>(undefined);
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [isLoadingReferences, setIsLoadingReferences] = useState(false);
+  const prevEffectiveProjectIdRef = useRef<string | undefined>(); // Ref to track previous project ID for fetching
 
   const { toast } = useToast();
 
@@ -59,33 +58,33 @@ export default function UploadSohPage() {
     }
   }, [currentUser?.role, toast]);
 
-  // Fetch SOH References for the current project context
   const fetchSohReferences = useCallback(async (projectId: string | undefined) => {
     if (!projectId) {
       setUploadedReferences([]);
+      setIsLoadingReferences(false); // Also set loading to false if no project
       return;
     }
     setIsLoadingReferences(true);
     try {
-      // This API endpoint needs to be created: GET /api/soh/references?stoProjectId=<id>
-      // For now, we'll keep the local update logic after a successful upload.
+      // TODO: Implement actual API call: GET /api/soh/references?stoProjectId=<id>
       // const response = await fetch(`/api/soh/references?stoProjectId=${projectId}`);
       // if (!response.ok) throw new Error('Failed to fetch SOH references.');
       // const data: SOHDataReference[] = await response.json();
       // setUploadedReferences(data.sort((a,b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()));
       console.log("Placeholder: Would fetch SOH references for project", projectId);
-      // To clear simulation data if project changes:
-      if (uploadedReferences.some(ref => ref.stoProjectId !== projectId)) {
-        //setUploadedReferences([]); // Or filter based on actual fetched data
-      }
-
+      // Simulate clearing old data if project changes IF NOT relying on local updates only
+      // For now, the upload handler adds to uploadedReferences locally.
+      // If this fetch were real, it would overwrite uploadedReferences.
+      // To ensure this function doesn't cause loops due to its own state sets triggering its parent useEffect:
+      // This function primarily sets isLoadingReferences and would setUploadedReferences from a fetch.
+      // These setters are stable.
     } catch (error) {
       toast({ title: "Error", description: "Could not fetch SOH references for the project.", variant: "destructive" });
+      setUploadedReferences([]); // Clear on error
     } finally {
       setIsLoadingReferences(false);
     }
-  }, [toast, uploadedReferences]);
-
+  }, [toast]); // Dependencies are stable (toast from context, state setters are stable)
 
   useEffect(() => {
     if (currentUser?.role === 'superuser') {
@@ -94,15 +93,19 @@ export default function UploadSohPage() {
   }, [currentUser, fetchSuperuserProjects]);
 
   useEffect(() => {
-    if (currentUser?.role !== 'superuser' && selectedProject) {
-      setProjectForUpload(selectedProject.id);
-      fetchSohReferences(selectedProject.id);
-    } else if (currentUser?.role === 'superuser') {
-      // Superuser selects project, so fetch references when projectForUpload changes
-      fetchSohReferences(projectForUpload);
-    } else {
-        setUploadedReferences([]); // Clear if no project context
+    let effectiveProjectId: string | undefined = undefined;
+    if (currentUser?.role === 'superuser') {
+      effectiveProjectId = projectForUpload;
+    } else if (currentUser?.role !== 'superuser' && selectedProject) {
+      effectiveProjectId = selectedProject.id;
     }
+
+    // Only call fetchSohReferences if the effectiveProjectId has actually changed or if fetchSohReferences itself changed (which it shouldn't often now)
+    if (prevEffectiveProjectIdRef.current !== effectiveProjectId) {
+      fetchSohReferences(effectiveProjectId);
+    }
+    prevEffectiveProjectIdRef.current = effectiveProjectId;
+
   }, [currentUser?.role, selectedProject, projectForUpload, fetchSohReferences]);
 
 
@@ -138,16 +141,15 @@ export default function UploadSohPage() {
 
     setIsProcessing(true);
     setCurrentStatusMessage("Uploading file...");
-    setUploadProgress(0); // Reset progress
+    setUploadProgress(0); 
 
     const formData = new FormData();
     formData.append('file', selectedFile);
     formData.append('stoProjectId', currentStoProjectId);
     
-    // Simulate initial upload part of progress
     let progressInterval = setInterval(() => {
         setUploadProgress(prev => {
-            if (prev >= 50) { // Cap at 50% for upload part
+            if (prev >= 50) { 
                  clearInterval(progressInterval);
                  return 50;
             }
@@ -162,9 +164,9 @@ export default function UploadSohPage() {
         body: formData,
       });
       
-      clearInterval(progressInterval); // Stop upload simulation
+      clearInterval(progressInterval); 
       setCurrentStatusMessage("File uploaded. Server is processing...");
-      setUploadProgress(75); // Indicate server processing started
+      setUploadProgress(75); 
 
       const result: UploadResult = await response.json();
 
@@ -180,9 +182,8 @@ export default function UploadSohPage() {
         duration: 7000,
       });
 
-      // Add to local state (ideally this comes from a re-fetch)
       const newReference: SOHDataReference = {
-        id: result.sohDataReferenceId || crypto.randomUUID(), // Use ID from response
+        id: result.sohDataReferenceId || crypto.randomUUID(), 
         filename: selectedFile.name,
         uploadedBy: currentUser?.email || 'unknown',
         uploadedAt: new Date().toISOString(),
@@ -192,17 +193,17 @@ export default function UploadSohPage() {
         errorMessage: result.errors ? result.errors.join('; ') : undefined,
         size: selectedFile.size,
         contentType: selectedFile.type,
+        processedAt: new Date().toISOString(), // Set processedAt here for local display
       };
       setUploadedReferences(prev => [newReference, ...prev].sort((a,b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()));
       
       setSelectedFile(null);
-      // Optionally reset project for superuser: // if (currentUser?.role === 'superuser') setProjectForUpload(undefined); 
 
     } catch (error) {
       clearInterval(progressInterval);
       const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred during upload.";
       setCurrentStatusMessage(`Error: ${errorMessage}`);
-      setUploadProgress(0); // Or keep progress to show where it failed
+      setUploadProgress(0); 
       toast({
         title: "SOH Upload Failed",
         description: errorMessage,
@@ -211,8 +212,6 @@ export default function UploadSohPage() {
       });
     } finally {
       setIsProcessing(false);
-      // Keep progress at 100 for success, or reset/show error progress
-      // If error, you might want to setUploadProgress to a specific value or leave it.
     }
   };
   
@@ -265,7 +264,6 @@ export default function UploadSohPage() {
                 value={projectForUpload} 
                 onValueChange={(value) => {
                   setProjectForUpload(value);
-                  // fetchSohReferences(value); // fetch references when project changes
                 }}
                 disabled={isLoadingProjects || userProjects.length === 0 || isProcessing}
               >
@@ -337,7 +335,6 @@ export default function UploadSohPage() {
             Uploaded SOH Data References
           </CardTitle>
           <CardDescription>List of SOH files processed and their status. 
-            {/* Add a refresh button here later */}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -372,7 +369,7 @@ export default function UploadSohPage() {
                         ref.status === "Completed" ? "bg-green-100 text-green-700" : 
                         ref.status === "Processing" || ref.status === "Storing" || ref.status === "Validating" || ref.status === "Uploading" ? "bg-blue-100 text-blue-700" : 
                         ref.status === "ValidationError" || ref.status === "StorageError" || ref.status === "UploadError" || ref.status === "SystemError" ? "bg-red-100 text-red-700" : 
-                        "bg-gray-100 text-gray-700" // Pending or other
+                        "bg-gray-100 text-gray-700" 
                       }`}>
                         {ref.status === "Completed" && <CheckCircle className="mr-1 h-3 w-3" />}
                         {(ref.status === "ValidationError" || ref.status === "StorageError" || ref.status === "SystemError") && <AlertTriangle className="mr-1 h-3 w-3" />}
