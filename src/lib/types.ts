@@ -72,4 +72,6 @@ export interface STOProject {
   createdBy: string; // Email of the superuser who created the project
   createdAt: string; // ISO string
   updatedAt: string; // ISO string
+  assignedAdminUserIds?: string[]; // Array of User IDs for assigned admin users
 }
+
