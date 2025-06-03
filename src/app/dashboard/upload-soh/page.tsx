@@ -8,25 +8,37 @@ import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import type { SOHDataReference, STOProject, User } from "@/lib/types";
-import { UploadCloud, CheckCircle, XCircle, FileCheck2, AlertCircle, FolderKanban, Info } from "lucide-react";
+import type { SOHDataReference, STOProject, User, SOHDataReferenceStatus } from "@/lib/types";
+import { UploadCloud, CheckCircle, XCircle, FileCheck2, AlertCircle, FolderKanban, Info, AlertTriangle, Loader2 } from "lucide-react";
 import React, { useState, useEffect, useCallback } from "react";
 import { useUser } from "@/app/dashboard/layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import Link from "next/link";
+import { format } from 'date-fns';
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
-const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
+// CHUNK_SIZE is not used for client-side actual chunking here, but for progress simulation.
+// Actual server-side processing will handle the full file.
+
+interface UploadResult {
+  message: string;
+  sohDataReferenceId?: string;
+  itemsProcessed?: number;
+  errors?: string[];
+}
+
 
 export default function UploadSohPage() {
   const { currentUser, selectedProject, isLoadingUser } = useUser();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
-  const [uploadedReferences, setUploadedReferences] = useState<SOHDataReference[]>([]);
+  const [uploadProgress, setUploadProgress] = useState(0); // For visual feedback
+  const [isProcessing, setIsProcessing] = useState(false); // Combined uploading/server processing state
+  const [currentStatusMessage, setCurrentStatusMessage] = useState<string | null>(null);
+  const [uploadedReferences, setUploadedReferences] = useState<SOHDataReference[]>([]); // Will be fetched
   const [userProjects, setUserProjects] = useState<STOProject[]>([]);
-  const [projectForUpload, setProjectForUpload] = useState<string | undefined>(undefined); // For superuser selection
+  const [projectForUpload, setProjectForUpload] = useState<string | undefined>(undefined);
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
+  const [isLoadingReferences, setIsLoadingReferences] = useState(false);
 
   const { toast } = useToast();
 
@@ -37,7 +49,7 @@ export default function UploadSohPage() {
         const response = await fetch('/api/projects');
         if (!response.ok) throw new Error('Failed to fetch projects');
         const projects: STOProject[] = await response.json();
-        setUserProjects(projects);
+        setUserProjects(projects.sort((a,b) => a.name.localeCompare(b.name)));
       } catch (error) {
         toast({ title: "Error", description: "Could not fetch your projects for selection.", variant: "destructive" });
         setUserProjects([]);
@@ -47,6 +59,34 @@ export default function UploadSohPage() {
     }
   }, [currentUser?.role, toast]);
 
+  // Fetch SOH References for the current project context
+  const fetchSohReferences = useCallback(async (projectId: string | undefined) => {
+    if (!projectId) {
+      setUploadedReferences([]);
+      return;
+    }
+    setIsLoadingReferences(true);
+    try {
+      // This API endpoint needs to be created: GET /api/soh/references?stoProjectId=<id>
+      // For now, we'll keep the local update logic after a successful upload.
+      // const response = await fetch(`/api/soh/references?stoProjectId=${projectId}`);
+      // if (!response.ok) throw new Error('Failed to fetch SOH references.');
+      // const data: SOHDataReference[] = await response.json();
+      // setUploadedReferences(data.sort((a,b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()));
+      console.log("Placeholder: Would fetch SOH references for project", projectId);
+      // To clear simulation data if project changes:
+      if (uploadedReferences.some(ref => ref.stoProjectId !== projectId)) {
+        //setUploadedReferences([]); // Or filter based on actual fetched data
+      }
+
+    } catch (error) {
+      toast({ title: "Error", description: "Could not fetch SOH references for the project.", variant: "destructive" });
+    } finally {
+      setIsLoadingReferences(false);
+    }
+  }, [toast, uploadedReferences]);
+
+
   useEffect(() => {
     if (currentUser?.role === 'superuser') {
       fetchSuperuserProjects();
@@ -54,13 +94,16 @@ export default function UploadSohPage() {
   }, [currentUser, fetchSuperuserProjects]);
 
   useEffect(() => {
-    // If admin has a selected project, set it as the projectForUpload automatically
     if (currentUser?.role !== 'superuser' && selectedProject) {
       setProjectForUpload(selectedProject.id);
+      fetchSohReferences(selectedProject.id);
     } else if (currentUser?.role === 'superuser') {
-      setProjectForUpload(undefined); // Superuser needs to select
+      // Superuser selects project, so fetch references when projectForUpload changes
+      fetchSohReferences(projectForUpload);
+    } else {
+        setUploadedReferences([]); // Clear if no project context
     }
-  }, [currentUser?.role, selectedProject]);
+  }, [currentUser?.role, selectedProject, projectForUpload, fetchSohReferences]);
 
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -78,7 +121,7 @@ export default function UploadSohPage() {
       }
       setSelectedFile(file);
       setUploadProgress(0);
-      setUploadStatus("idle");
+      setCurrentStatusMessage("File selected. Ready to upload.");
     }
   };
 
@@ -87,48 +130,90 @@ export default function UploadSohPage() {
       toast({ title: "Error", description: "No file selected.", variant: "destructive" });
       return;
     }
-    if (!projectForUpload) {
+    const currentStoProjectId = currentUser?.role === 'superuser' ? projectForUpload : selectedProject?.id;
+    if (!currentStoProjectId) {
       toast({ title: "Error", description: "Please select a project to upload the SOH data for.", variant: "destructive" });
       return;
     }
 
-    setIsUploading(true);
-    setUploadStatus("uploading");
-    setUploadProgress(0);
+    setIsProcessing(true);
+    setCurrentStatusMessage("Uploading file...");
+    setUploadProgress(0); // Reset progress
 
-    const totalChunks = Math.ceil(selectedFile.size / CHUNK_SIZE);
-
-    for (let i = 0; i < totalChunks; i++) {
-      await new Promise(resolve => setTimeout(resolve, 200)); 
-      setUploadProgress(((i + 1) / totalChunks) * 100);
-    }
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('stoProjectId', currentStoProjectId);
     
-    // Simulate actual upload and backend processing
-    const currentProjectName = currentUser?.role === 'superuser' 
-        ? userProjects.find(p => p.id === projectForUpload)?.name 
-        : selectedProject?.name;
+    // Simulate initial upload part of progress
+    let progressInterval = setInterval(() => {
+        setUploadProgress(prev => {
+            if (prev >= 50) { // Cap at 50% for upload part
+                 clearInterval(progressInterval);
+                 return 50;
+            }
+            return prev + 10;
+        });
+    }, 100);
 
-    setTimeout(() => {
-      setIsUploading(false);
-      setUploadStatus("success");
-      toast({ 
-        title: "SOH Upload (Simulated)", 
-        description: `${selectedFile.name} 'uploaded' for project: ${currentProjectName || projectForUpload}. Actual data processing and storage not yet implemented.` 
+
+    try {
+      const response = await fetch('/api/soh/upload-process', {
+        method: 'POST',
+        body: formData,
       });
       
+      clearInterval(progressInterval); // Stop upload simulation
+      setCurrentStatusMessage("File uploaded. Server is processing...");
+      setUploadProgress(75); // Indicate server processing started
+
+      const result: UploadResult = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || `Server responded with ${response.status}`);
+      }
+      
+      setUploadProgress(100);
+      setCurrentStatusMessage(`Processing complete! ${result.message}`);
+      toast({ 
+        title: "SOH Upload Successful", 
+        description: result.message,
+        duration: 7000,
+      });
+
+      // Add to local state (ideally this comes from a re-fetch)
       const newReference: SOHDataReference = {
-        id: crypto.randomUUID(),
+        id: result.sohDataReferenceId || crypto.randomUUID(), // Use ID from response
         filename: selectedFile.name,
+        uploadedBy: currentUser?.email || 'unknown',
         uploadedAt: new Date().toISOString(),
-        rowCount: Math.floor(Math.random() * 1000) + 500, 
-        status: "Completed", 
-        stoProjectId: projectForUpload,
+        rowCount: result.itemsProcessed || 0,
+        status: result.errors && result.errors.length > 0 && result.itemsProcessed === 0 ? 'ValidationError' : result.errors && result.errors.length > 0 ? 'Completed' : 'Completed',
+        stoProjectId: currentStoProjectId,
+        errorMessage: result.errors ? result.errors.join('; ') : undefined,
+        size: selectedFile.size,
+        contentType: selectedFile.type,
       };
       setUploadedReferences(prev => [newReference, ...prev].sort((a,b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()));
-      setSelectedFile(null); 
-      // For superusers, reset project selection for next upload, or keep it? For now, let's keep it.
-      // if (currentUser?.role === 'superuser') setProjectForUpload(undefined); 
-    }, 500);
+      
+      setSelectedFile(null);
+      // Optionally reset project for superuser: // if (currentUser?.role === 'superuser') setProjectForUpload(undefined); 
+
+    } catch (error) {
+      clearInterval(progressInterval);
+      const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred during upload.";
+      setCurrentStatusMessage(`Error: ${errorMessage}`);
+      setUploadProgress(0); // Or keep progress to show where it failed
+      toast({
+        title: "SOH Upload Failed",
+        description: errorMessage,
+        variant: "destructive",
+        duration: 10000,
+      });
+    } finally {
+      setIsProcessing(false);
+      // Keep progress at 100 for success, or reset/show error progress
+      // If error, you might want to setUploadProgress to a specific value or leave it.
+    }
   };
   
   const getProjectNameById = (projectId?: string): string => {
@@ -143,7 +228,7 @@ export default function UploadSohPage() {
 
 
   if (isLoadingUser) {
-    return <div className="flex justify-center items-center h-64"><p>Loading user session...</p></div>;
+    return <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /> <p className="ml-2">Loading user session...</p></div>;
   }
   if (currentUser?.role !== 'superuser' && !selectedProject) {
      return (
@@ -167,7 +252,7 @@ export default function UploadSohPage() {
             Upload Stock On Hand (SOH) Data
           </CardTitle>
           <CardDescription>
-            Upload SOH data from XLSX files. Max file size: 100MB. All uploads are currently simulated.
+            Upload SOH data from XLSX files. Max file size: 100MB. Ensure columns: SKU, Description, SOH Quantity. Location is optional.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -178,15 +263,18 @@ export default function UploadSohPage() {
               </label>
               <Select 
                 value={projectForUpload} 
-                onValueChange={setProjectForUpload}
-                disabled={isLoadingProjects || userProjects.length === 0}
+                onValueChange={(value) => {
+                  setProjectForUpload(value);
+                  // fetchSohReferences(value); // fetch references when project changes
+                }}
+                disabled={isLoadingProjects || userProjects.length === 0 || isProcessing}
               >
-                <SelectTrigger id="project-select">
+                <SelectTrigger id="project-select" className="disabled:opacity-70">
                   <SelectValue placeholder={isLoadingProjects ? "Loading projects..." : (userProjects.length === 0 ? "No projects created yet" : "Select a project")} />
                 </SelectTrigger>
                 <SelectContent>
                   {userProjects.map(proj => (
-                    <SelectItem key={proj.id} value={proj.id}>{proj.name}</SelectItem>
+                    <SelectItem key={proj.id} value={proj.id}>{proj.name} ({proj.status})</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -210,43 +298,34 @@ export default function UploadSohPage() {
 
           <div>
             <label htmlFor="file-upload" className="block text-sm font-medium text-foreground mb-1">
-              Select XLSX File
+              Select XLSX File <span className="text-destructive">*</span>
             </label>
             <Input
               id="file-upload"
               type="file"
-              accept=".xlsx"
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               onChange={handleFileChange}
-              className="file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
-              disabled={isUploading || (currentUser?.role === 'superuser' && !projectForUpload && userProjects.length > 0) }
+              className="file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 disabled:opacity-70"
+              disabled={isProcessing || (currentUser?.role === 'superuser' && !projectForUpload && userProjects.length > 0) }
             />
             {selectedFile && <p className="mt-2 text-sm text-muted-foreground">Selected: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)</p>}
           </div>
 
-          {isUploading && (
-            <div className="space-y-2">
+          {isProcessing && (
+            <div className="space-y-2 pt-2">
               <Progress value={uploadProgress} className="w-full h-3" />
-              <p className="text-sm text-primary text-center">Uploading... {uploadProgress.toFixed(0)}%</p>
+              <p className="text-sm text-primary text-center">{currentStatusMessage || `Processing... ${uploadProgress.toFixed(0)}%`}</p>
             </div>
+          )}
+          {!isProcessing && currentStatusMessage && !currentStatusMessage.startsWith("File selected") && (
+             <p className={`text-sm ${currentStatusMessage.startsWith("Error:") ? "text-destructive" : "text-green-600"} text-center pt-2`}>{currentStatusMessage}</p>
           )}
 
-          {uploadStatus === "success" && (
-            <div className="flex items-center text-green-600">
-              <CheckCircle className="mr-2 h-5 w-5" />
-              <p>Upload simulation complete! File processed for the designated project.</p>
-            </div>
-          )}
-          {uploadStatus === "error" && (
-            <div className="flex items-center text-destructive">
-              <XCircle className="mr-2 h-5 w-5" />
-              <p>Upload failed. Please try again.</p>
-            </div>
-          )}
 
         </CardContent>
         <CardFooter>
-          <Button onClick={handleUpload} disabled={!canUpload || isUploading}>
-            {isUploading ? "Uploading..." : "Upload File"}
+          <Button onClick={handleUpload} disabled={!canUpload || isProcessing}>
+            {isProcessing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/>Processing...</> : <><UploadCloud className="mr-2 h-4 w-4"/>Upload & Process File</>}
           </Button>
         </CardFooter>
       </Card>
@@ -255,46 +334,60 @@ export default function UploadSohPage() {
         <CardHeader>
           <CardTitle className="font-headline text-xl flex items-center">
              <FileCheck2 className="mr-2 h-5 w-5 text-accent" />
-            Uploaded SOH Data References (Simulated)
+            Uploaded SOH Data References
           </CardTitle>
-          <CardDescription>List of SOH files 'uploaded' and their (simulated) status and project association.</CardDescription>
+          <CardDescription>List of SOH files processed and their status. 
+            {/* Add a refresh button here later */}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          {uploadedReferences.length === 0 ? (
-            <p className="text-muted-foreground">No SOH data files have been 'uploaded' yet.</p>
+          {isLoadingReferences ? (
+            <div className="flex items-center justify-center py-4"> <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading references...</div>
+          ) : uploadedReferences.length === 0 ? (
+            <p className="text-muted-foreground py-4 text-center">No SOH data files have been processed for {
+                currentUser?.role === 'superuser' ? (projectForUpload ? `project ${getProjectNameById(projectForUpload)}` : "the selected project context") : (selectedProject ? `project ${selectedProject.name}` : "your project")
+            }.</p>
           ) : (
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Filename</TableHead>
                   <TableHead>Project</TableHead>
                   <TableHead>Uploaded At</TableHead>
-                  <TableHead>Row Count</TableHead>
+                  <TableHead>Items</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Details</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {uploadedReferences.map((ref) => (
                   <TableRow key={ref.id}>
-                    <TableCell className="font-medium">{ref.filename}</TableCell>
-                    <TableCell className="text-sm">{getProjectNameById(ref.stoProjectId)}</TableCell>
-                    <TableCell>{new Date(ref.uploadedAt).toLocaleString()}</TableCell>
+                    <TableCell className="font-medium max-w-xs truncate" title={ref.filename}>{ref.filename}</TableCell>
+                    <TableCell className="text-sm max-w-[150px] truncate" title={getProjectNameById(ref.stoProjectId)}>{getProjectNameById(ref.stoProjectId)}</TableCell>
+                    <TableCell>{ref.processedAt ? format(new Date(ref.processedAt), 'PPpp') : (ref.uploadedAt ? format(new Date(ref.uploadedAt), 'PPpp') : 'N/A')}</TableCell>
                     <TableCell>{ref.rowCount}</TableCell>
                     <TableCell>
-                      <span className={`flex items-center px-2 py-1 text-xs rounded-full ${
+                      <span className={`flex items-center px-2 py-0.5 text-xs rounded-full whitespace-nowrap ${
                         ref.status === "Completed" ? "bg-green-100 text-green-700" : 
-                        ref.status === "Processing" ? "bg-blue-100 text-blue-700" : 
-                        ref.status === "Error" ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-700"
+                        ref.status === "Processing" || ref.status === "Storing" || ref.status === "Validating" || ref.status === "Uploading" ? "bg-blue-100 text-blue-700" : 
+                        ref.status === "ValidationError" || ref.status === "StorageError" || ref.status === "UploadError" || ref.status === "SystemError" ? "bg-red-100 text-red-700" : 
+                        "bg-gray-100 text-gray-700" // Pending or other
                       }`}>
                         {ref.status === "Completed" && <CheckCircle className="mr-1 h-3 w-3" />}
-                        {ref.status === "Error" && <AlertCircle className="mr-1 h-3 w-3" />}
+                        {(ref.status === "ValidationError" || ref.status === "StorageError" || ref.status === "SystemError") && <AlertTriangle className="mr-1 h-3 w-3" />}
+                        {(ref.status === "Processing" || ref.status === "Storing" || ref.status === "Validating" || ref.status === "Uploading") && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
                         {ref.status}
                       </span>
                     </TableCell>
+                     <TableCell className="text-xs text-muted-foreground max-w-md truncate" title={ref.errorMessage}>
+                        {ref.errorMessage || (ref.status === "Completed" && ref.rowCount > 0 ? "Successfully processed." : "-")}
+                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>

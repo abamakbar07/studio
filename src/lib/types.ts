@@ -37,24 +37,46 @@ export interface StockForm {
   stoProjectId?: string; // Link to the STO Project
 }
 
+export type SOHDataReferenceStatus = 
+  | "Pending"          // Initial state after file select, before upload/processing starts
+  | "Uploading"        // File is being uploaded to server
+  | "Processing"       // Server received file, initial parsing started
+  | "Validating"       // Server is validating data structure and content
+  | "Storing"          // Server is writing valid data to Firestore
+  | "Completed"        // All data successfully stored
+  | "ValidationError"  // Data failed validation checks
+  | "StorageError"     // Error occurred during Firestore write
+  | "UploadError"      // Error during file upload itself
+  | "SystemError";     // Generic server-side error during processing
+
 export interface SOHDataReference {
-  id: string;
+  id: string; // Firestore document ID
   filename: string;
-  uploadedAt: string;
-  rowCount: number;
-  status: "Pending" | "Processing" | "Completed" | "Error";
-  stoProjectId?: string; // Link to the STO Project
+  originalFilename?: string; // If we rename it on server
+  uploadedBy: string; // User ID or email
+  uploadedAt: string; // ISO string - when upload initiated client-side
+  processedAt?: string; // ISO string - when server finished processing
+  rowCount: number; // Number of valid items processed and stored
+  status: SOHDataReferenceStatus;
+  stoProjectId: string; // Link to the STO Project
+  errorMessage?: string; // If status is Error, ValidationError, or StorageError
+  contentType?: string; // e.g., application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+  size?: number; // file size in bytes
 }
 
+
 export interface StockItem {
-  id: string;
+  id: string; // Firestore document ID (can be auto-generated or SKU if unique per project+soh_ref)
   sku: string;
   description: string;
   sohQuantity: number; // From uploaded SOH
+  location?: string; // Optional, from SOH
   physicalCount?: number | null; // From direct input
   variance?: number;
-  stoProjectId?: string; // Link to the STO Project
-  formId?: string; // Link to the StockForm
+  stoProjectId: string; // Link to the STO Project
+  sohDataReferenceId: string; // Link to the SOHDataReference document
+  formId?: string; // Link to the StockForm if item is on a count sheet
+  // Potentially: unitOfMeasure, category, etc.
 }
 
 // STO Project Management
@@ -75,3 +97,7 @@ export interface STOProject {
   assignedAdminUserIds?: string[]; // Array of User IDs for assigned admin users
 }
 
+export interface SimplifiedSelectedProject {
+  id: string;
+  name: string;
+}
