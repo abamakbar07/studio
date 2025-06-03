@@ -1,8 +1,11 @@
+
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { FilePieChart, Activity } from 'lucide-react';
+import { FilePieChart, Activity, FolderKanban, Info } from 'lucide-react';
+import { useUser } from "@/app/dashboard/layout";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const sampleVarianceData = [
   { name: 'Item A', soh: 100, physical: 95, variance: -5 },
@@ -23,6 +26,24 @@ const sampleCompletionData = [
 
 
 export default function ReportsPage() {
+  const { currentUser, selectedProject, isLoadingUser } = useUser();
+
+  if (isLoadingUser) {
+    return <div className="flex justify-center items-center h-64"><p>Loading user session...</p></div>;
+  }
+
+  if (currentUser?.role !== 'superuser' && !selectedProject) {
+     return (
+        <Alert variant="default" className="border-yellow-500 text-yellow-700">
+            <Info className="h-5 w-5 text-yellow-600" />
+            <AlertTitle className="font-headline">Project Selection Required</AlertTitle>
+            <AlertDescription>
+            Admin users must first select an STO Project to view reports. Please use the "Select Project" page or sidebar link.
+            </AlertDescription>
+        </Alert>
+     );
+  }
+
   return (
     <div className="space-y-6">
       <Card>
@@ -32,10 +53,24 @@ export default function ReportsPage() {
             Stock Reports
           </CardTitle>
           <CardDescription>
-            Analyze stock data, variances, and operational efficiency.
+            Analyze stock data, variances, and operational efficiency. 
+            {currentUser?.role === 'superuser' && " (Data shown is sample data. Select a project to view specific reports in the future)."}
           </CardDescription>
+          {currentUser?.role !== 'superuser' && selectedProject && (
+            <p className="text-sm text-muted-foreground mt-1">
+                Currently viewing sample data. Reports for project: <strong className="text-primary">{selectedProject.name}</strong> will be shown here once implemented.
+            </p>
+          )}
         </CardHeader>
       </Card>
+
+      <Alert variant="default" className="border-blue-500 text-blue-700 bg-blue-50">
+          <Info className="h-5 w-5 text-blue-600" />
+          <AlertTitle className="font-headline">Placeholder Data</AlertTitle>
+          <AlertDescription>
+          The charts below currently display sample data. Full integration with project-specific data is under development.
+          </AlertDescription>
+      </Alert>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>

@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { USER_ROLES } from "@/lib/constants";
 import type { User, UserRole } from "@/lib/types";
-import { MoreHorizontal, PlusCircle, Edit2, Trash2, CheckCircle, ShieldAlert, MailWarning, UserCheck, UserX } from "lucide-react";
+import { MoreHorizontal, PlusCircle, Edit2, Trash2, CheckCircle, ShieldAlert, MailWarning, UserCheck, UserX, Info } from "lucide-react";
 import React, { useState, useEffect, useCallback } from "react";
 import { db } from "@/lib/firebase/config";
 import { collection, onSnapshot, doc, updateDoc, deleteDoc, query, where } from "firebase/firestore";
@@ -22,7 +22,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger, // Added AlertDialogTrigger here
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
   Dialog,
@@ -40,8 +40,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useUser } from "@/app/dashboard/layout";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 
-type PageStatus = 'loading-session' | 'loading-data' | 'authorized' | 'unauthorized' | 'no-data' | 'error-fetching';
+type PageStatus = 'loading-session' | 'loading-data' | 'authorized' | 'no-data' | 'error-fetching' | 'unauthorized';
 
 const addAdminUserSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }),
@@ -79,6 +81,7 @@ export default function UserManagementPage() {
   const adminRolesForSelect = USER_ROLES.filter(role => role.value !== "superuser");
 
   const fetchUsers = useCallback(async (superuserEmailToFilterBy: string) => {
+    console.log(`[UserManagement] fetchUsers called for: ${superuserEmailToFilterBy}`);
     const usersCollectionRef = collection(db, "users");
     
     const adminRoleValues = USER_ROLES
@@ -86,6 +89,7 @@ export default function UserManagementPage() {
       .map(role => role.value as string);
 
     if (adminRoleValues.length === 0) {
+      console.log("[UserManagement] fetchUsers: No admin roles defined for query.");
       setUsers([]);
       setPageStatus('no-data'); 
       return () => {}; 
@@ -101,6 +105,7 @@ export default function UserManagementPage() {
     try {
       unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
         const fetchedUsers: User[] = snapshot.docs.map(docSnapshot => ({ id: docSnapshot.id, ...docSnapshot.data() } as User));
+        console.log("[UserManagement] fetchUsers: Data received, user count:", fetchedUsers.length);
         setUsers(fetchedUsers);
         if (fetchedUsers.length === 0) {
           setPageStatus('no-data');
@@ -108,11 +113,13 @@ export default function UserManagementPage() {
           setPageStatus('authorized');
         }
       }, (error) => {
-        toast({ title: "Error Loading Users", description: `Failed to load users: ${error.message}. Ensure Firestore indexes are configured if prompted.`, variant: "destructive", duration: 10000 });
+        console.error("[UserManagement] fetchUsers: Firestore error:", error);
+        toast({ title: "Error Loading Users", description: `Failed to load users: ${error.message}. Ensure Firestore indexes are configured if prompted. Check console for details.`, variant: "destructive", duration: 10000 });
         setPageStatus('error-fetching');
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      console.error("[UserManagement] fetchUsers: Error initializing fetch:", errorMessage);
       toast({ title: "Error Initializing Fetch", description: `Failed to initialize user data fetching: ${errorMessage}`, variant: "destructive" });
       setPageStatus('error-fetching');
     }
@@ -122,6 +129,7 @@ export default function UserManagementPage() {
 
   useEffect(() => {
     let unsubscribe = () => {};
+    console.log(`[UserManagement] Effect (Auth & Data Load) triggered. isLoadingUser: ${isLoadingUser}, currentUser: ${!!currentUser}, pageStatus: ${pageStatus}`);
 
     if (isLoadingUser) {
       setPageStatus('loading-session');
@@ -131,22 +139,27 @@ export default function UserManagementPage() {
     if (!currentUser) {
       setPageStatus('unauthorized');
     } else if (currentUser.role === 'superuser' && currentUser.email) {
+      // Only fetch if status indicates it's needed (e.g., initial load or coming from unauthorized)
       if (pageStatus === 'loading-session' || pageStatus === 'unauthorized' || pageStatus === 'loading-data' ) { 
-         if(pageStatus !== 'loading-data') setPageStatus('loading-data');
+         console.log("[UserManagement] Superuser identified, ensuring pageStatus is loading-data.");
+         if(pageStatus !== 'loading-data') setPageStatus('loading-data'); // Set to loading-data only if not already
          fetchUsers(currentUser.email).then(unsub => { unsubscribe = unsub || (() => {}) });
       }
     } else if (currentUser.role !== 'superuser') {
       setPageStatus('unauthorized');
-    } else if (!currentUser.email) {
+    } else if (!currentUser.email) { // Should not happen if currentUser is set and role is superuser
         setPageStatus('error-fetching');
         toast({title: "Error", description:"Superuser email missing in session.", variant: "destructive"});
     }
 
     return () => {
+      console.log("[UserManagement] Cleaning up Firestore listener.");
       if (typeof unsubscribe === 'function') {
         unsubscribe();
       }
     };
+  // Ensure pageStatus is part of dependencies to re-evaluate if it changes externally,
+  // but be careful not to cause infinite loops if fetchUsers itself changes pageStatus.
   }, [currentUser, isLoadingUser, fetchUsers, pageStatus, toast]);
 
 
@@ -185,10 +198,6 @@ export default function UserManagementPage() {
     }
   };
 
-  const openEditUserDialog = (user: User) => {
-    toast({ title: "Edit User (Placeholder)", description: `Editing user ${user.email}. This feature is not yet implemented.` });
-  };
-
   const onAddUserSubmit = async (data: AddAdminUserFormValues) => {
     try {
       const response = await fetch('/api/admin/create-user', {
@@ -214,8 +223,119 @@ export default function UserManagementPage() {
     }
   };
 
+  const renderUserTable = () => (
+    <TooltipProvider>
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Name</TableHead>
+          <TableHead>Email</TableHead>
+          <TableHead>Role</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Created At</TableHead>
+          <TableHead className="text-right">Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {users.map((user) => (
+          <TableRow key={user.id}>
+            <TableCell className="font-medium">{user.name || 'N/A'}</TableCell>
+            <TableCell>{user.email}</TableCell>
+            <TableCell>
+              <Badge variant={"secondary"} className="capitalize">
+                {USER_ROLES.find(r => r.value === user.role)?.label || user.role}
+              </Badge>
+            </TableCell>
+            <TableCell>
+              <div className="flex flex-col gap-1">
+                {!user.emailVerified && (
+                  <Badge variant="outline" className="text-amber-600 border-amber-500">
+                    <MailWarning className="mr-1 h-3 w-3" /> Email Unverified
+                  </Badge>
+                )}
+                {user.emailVerified && !user.approved && (
+                  <Badge variant="outline" className="text-orange-600 border-orange-500">
+                    <ShieldAlert className="mr-1 h-3 w-3" /> Pending Approval
+                  </Badge>
+                )}
+                {user.emailVerified && user.approved && !user.isActive && (
+                  <Badge variant="outline" className="text-blue-600 border-blue-500">
+                    <UserX className="mr-1 h-3 w-3" /> Pending Activation
+                  </Badge>
+                )}
+                {user.emailVerified && user.approved && user.isActive && (
+                  <Badge variant="outline" className="text-green-600 border-green-500">
+                    <UserCheck className="mr-1 h-3 w-3" /> Active
+                  </Badge>
+                )}
+              </div>
+            </TableCell>
+            <TableCell>{user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}</TableCell>
+            <TableCell className="text-right">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {user.role !== 'superuser' && user.emailVerified && !user.approved && (
+                    <DropdownMenuItem onClick={() => handleApproveUser(user.id, user.role)}>
+                      <CheckCircle className="mr-2 h-4 w-4 text-green-500" /> Approve User
+                    </DropdownMenuItem>
+                  )}
+                  {user.role !== 'superuser' && user.emailVerified && user.approved && !user.isActive && (
+                    <DropdownMenuItem onClick={() => handleActivateUser(user.id)}>
+                      <UserCheck className="mr-2 h-4 w-4 text-blue-500" /> Activate User
+                    </DropdownMenuItem>
+                  )}
+                  {user.role !== 'superuser' && user.approved && user.isActive && (
+                    <DropdownMenuItem onClick={() => handleDeactivateUser(user.id)} className="text-orange-600 hover:!text-orange-600 focus:text-orange-600">
+                      <UserX className="mr-2 h-4 w-4" /> Deactivate User
+                    </DropdownMenuItem>
+                  )}
+                  { (user.role !== 'superuser' && (!user.approved || !user.isActive)) && <DropdownMenuSeparator />}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                        <DropdownMenuItem disabled onSelect={(e)=>e.preventDefault()}>
+                            <Edit2 className="mr-2 h-4 w-4" /> Edit User (Soon)
+                        </DropdownMenuItem>
+                    </TooltipTrigger>
+                    <TooltipContent><p>Full user editing (including role changes) is coming soon.</p></TooltipContent>
+                  </Tooltip>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive hover:!text-destructive focus:text-destructive">
+                        <Trash2 className="mr-2 h-4 w-4" /> Delete User
+                      </DropdownMenuItem>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will permanently delete the user <strong className="text-foreground">{user.email}</strong>. This action cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => handleDeleteUser(user.id)} className="bg-destructive hover:bg-destructive/90">
+                          Delete
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+    </TooltipProvider>
+  );
 
   const renderContent = () => {
+    console.log(`[UserManagement] renderContent called with pageStatus: ${pageStatus}`);
     switch (pageStatus) {
       case 'loading-session':
         return <div className="flex justify-center items-center h-64"><p>Loading session...</p></div>;
@@ -229,7 +349,17 @@ export default function UserManagementPage() {
          }
          return <p className="text-muted-foreground p-4 text-center">No users to display.</p>;
       case 'error-fetching':
-        return <p className="text-destructive p-4 text-center">Could not load user data. Please check console for errors and ensure Firestore indexes are set up if required.</p>;
+        return (
+            <Alert variant="destructive">
+                <Info className="h-5 w-5" />
+                <AlertTitle>Error Fetching Users</AlertTitle>
+                <AlertDescription>
+                Could not load user data. This might be due to missing Firestore indexes. 
+                Please check your browser console for a link to create the required index.
+                If the issue persists after creating the index, please contact support.
+                </AlertDescription>
+            </Alert>
+        );
       case 'authorized':
         if (users.length === 0 && currentUser?.role === 'superuser') {
           return <p className="text-muted-foreground p-4 text-center">No admin users found associated with your account. Click "Add New User" to create one.</p>;
@@ -237,118 +367,15 @@ export default function UserManagementPage() {
         if (users.length === 0) {
           return <p className="text-muted-foreground p-4 text-center">No users to display.</p>;
         }
-        return (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Created At</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell className="font-medium">{user.name || 'N/A'}</TableCell>
-                  <TableCell>{user.email}</TableCell>
-                  <TableCell>
-                    <Badge variant={"secondary"} className="capitalize">
-                      {USER_ROLES.find(r => r.value === user.role)?.label || user.role}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-col gap-1">
-                      {!user.emailVerified && (
-                        <Badge variant="outline" className="text-amber-600 border-amber-500">
-                          <MailWarning className="mr-1 h-3 w-3" /> Email Unverified
-                        </Badge>
-                      )}
-                      {user.emailVerified && !user.approved && (
-                        <Badge variant="outline" className="text-orange-600 border-orange-500">
-                          <ShieldAlert className="mr-1 h-3 w-3" /> Pending Approval
-                        </Badge>
-                      )}
-                      {user.emailVerified && user.approved && !user.isActive && (
-                        <Badge variant="outline" className="text-blue-600 border-blue-500">
-                          <UserX className="mr-1 h-3 w-3" /> Pending Activation
-                        </Badge>
-                      )}
-                      {user.emailVerified && user.approved && user.isActive && (
-                        <Badge variant="outline" className="text-green-600 border-green-500">
-                          <UserCheck className="mr-1 h-3 w-3" /> Active
-                        </Badge>
-                      )}
-                      {user.role !== 'superuser' && user.superuserEmail && (
-                        <span className="text-xs text-muted-foreground">Managed by: {user.superuserEmail}</span>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>{user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}</TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        {user.role !== 'superuser' && user.emailVerified && !user.approved && (
-                          <DropdownMenuItem onClick={() => handleApproveUser(user.id, user.role)}>
-                            <CheckCircle className="mr-2 h-4 w-4 text-green-500" /> Approve User
-                          </DropdownMenuItem>
-                        )}
-                        {user.role !== 'superuser' && user.emailVerified && user.approved && !user.isActive && (
-                          <DropdownMenuItem onClick={() => handleActivateUser(user.id)}>
-                            <UserCheck className="mr-2 h-4 w-4 text-blue-500" /> Activate User
-                          </DropdownMenuItem>
-                        )}
-                        {user.role !== 'superuser' && user.approved && user.isActive && (
-                          <DropdownMenuItem onClick={() => handleDeactivateUser(user.id)} className="text-orange-600 hover:!text-orange-600 focus:text-orange-600">
-                            <UserX className="mr-2 h-4 w-4" /> Deactivate User
-                          </DropdownMenuItem>
-                        )}
-                        { (user.role !== 'superuser' && (!user.approved || !user.isActive)) && <DropdownMenuSeparator />}
-                        <DropdownMenuItem onClick={() => openEditUserDialog(user)}>
-                          <Edit2 className="mr-2 h-4 w-4" /> Edit User (Placeholder)
-                        </DropdownMenuItem>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive hover:!text-destructive focus:text-destructive">
-                              <Trash2 className="mr-2 h-4 w-4" /> Delete User
-                            </DropdownMenuItem>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                This will permanently delete the user <strong className="text-foreground">{user.email}</strong>. This action cannot be undone.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => handleDeleteUser(user.id)} className="bg-destructive hover:bg-destructive/90">
-                                Delete
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        );
+        return renderUserTable();
       default:
         return <div className="flex justify-center items-center h-64"><p>Loading...</p></div>;
     }
   };
 
-  const isButtonDisabled = !(pageStatus === 'authorized' || pageStatus === 'no-data' || (pageStatus === 'error-fetching' && currentUser?.role === 'superuser'));
+  // Button should be enabled if page is authorized (even with no data, to allow adding first user) or if it's an error but user is superuser (to allow retrying/accessing add dialog)
+  const isButtonDisabled = !(currentUser?.role === 'superuser' && (pageStatus === 'authorized' || pageStatus === 'no-data' || pageStatus === 'error-fetching' || pageStatus === 'loading-data'));
+  console.log(`[UserManagement] "Add New User" button disabled state: ${isButtonDisabled}, pageStatus: ${pageStatus}`);
 
   return (
     <div className="space-y-6">
@@ -356,7 +383,7 @@ export default function UserManagementPage() {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle className="font-headline text-2xl">User Management</CardTitle>
-            <CardDescription>Manage admin users associated with your superuser account.</CardDescription>
+            <CardDescription>Manage admin users associated with your superuser account. Full editing, including role changes, is coming soon.</CardDescription>
           </div>
           <Button onClick={() => setIsAddUserDialogOpen(true)} disabled={isButtonDisabled}>
             <PlusCircle className="mr-2 h-5 w-5" /> Add New User
@@ -468,5 +495,3 @@ export default function UserManagementPage() {
     </div>
   );
 }
-
-    

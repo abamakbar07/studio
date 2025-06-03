@@ -14,10 +14,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import type { STOProject, STOProjectStatus, User as AppUser } from "@/lib/types";
 import { STO_PROJECT_STATUS_LIST, STO_PROJECT_STATUS_ICONS, getStatusColor } from "@/lib/constants";
-import { MoreHorizontal, PlusCircle, Edit2, Trash2, FolderKanban, Users2 } from "lucide-react";
+import { MoreHorizontal, PlusCircle, Edit2, Trash2, FolderKanban, Users2, Info } from "lucide-react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -142,7 +143,7 @@ export default function STOProjectsPage() {
       if (!response.ok) throw new Error((await response.json()).message || 'Failed to assign users.');
       toast({ title: "Success", description: "User assignments updated successfully." });
       setIsAssignUsersDialogOpen(false);
-      fetchProjects(); // Refresh project list to show updated assignment info (if displayed)
+      fetchProjects(); 
     } catch (error) {
       toast({ title: "Error Assigning Users", description: (error as Error).message, variant: "destructive" });
     }
@@ -157,6 +158,7 @@ export default function STOProjectsPage() {
       case 'error-fetching': return <p className="text-destructive p-4 text-center">Could not load projects. Please try again later.</p>;
       case 'authorized':
         return (
+          <TooltipProvider>
           <Table>
             <TableHeader>
               <TableRow>
@@ -172,7 +174,12 @@ export default function STOProjectsPage() {
                 const StatusIcon = STO_PROJECT_STATUS_ICONS[project.status];
                 return (
                   <TableRow key={project.id}>
-                    <TableCell className="font-medium">{project.name}</TableCell>
+                    <TableCell className="font-medium">
+                      <div className="flex flex-col">
+                        <span>{project.name}</span>
+                        {project.description && <span className="text-xs text-muted-foreground truncate max-w-xs">{project.description}</span>}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                         {project.assignedAdminUserIds && project.assignedAdminUserIds.length > 0 ? `${project.assignedAdminUserIds.length} user(s)` : 'None'}
                     </TableCell>
@@ -191,16 +198,30 @@ export default function STOProjectsPage() {
                              <Users2 className="mr-2 h-4 w-4" /> Manage Assignments
                            </DropdownMenuItem>
                            <DropdownMenuSub>
-                            <DropdownMenuSubTrigger>Change Status</DropdownMenuSubTrigger>
+                            <DropdownMenuSubTrigger><StatusIcon className="mr-2 h-4 w-4" />Change Status</DropdownMenuSubTrigger>
                             <DropdownMenuPortal><DropdownMenuSubContent>
                                 {STO_PROJECT_STATUS_LIST.map(status => (
                                     <DropdownMenuItem key={status} disabled={project.status === status} onClick={() => handleChangeProjectStatus(project.id, status)}>{status}</DropdownMenuItem>
                                 ))}
                             </DropdownMenuSubContent></DropdownMenuPortal>
                            </DropdownMenuSub>
-                          <DropdownMenuItem disabled><Edit2 className="mr-2 h-4 w-4" /> Edit Details (Soon)</DropdownMenuItem>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                                <DropdownMenuItem disabled onSelect={(e)=> e.preventDefault()}>
+                                    <Edit2 className="mr-2 h-4 w-4" /> Edit Details (Soon)
+                                </DropdownMenuItem>
+                            </TooltipTrigger>
+                            <TooltipContent><p>Full project detail editing is coming soon.</p></TooltipContent>
+                          </Tooltip>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem disabled className="text-destructive hover:!text-destructive focus:text-destructive"><Trash2 className="mr-2 h-4 w-4" /> Delete Project (Soon)</DropdownMenuItem>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                                <DropdownMenuItem disabled className="text-destructive hover:!text-destructive focus:text-destructive" onSelect={(e)=> e.preventDefault()}>
+                                    <Trash2 className="mr-2 h-4 w-4" /> Delete Project (Soon)
+                                </DropdownMenuItem>
+                            </TooltipTrigger>
+                            <TooltipContent><p>Project deletion will be available in a future update.</p></TooltipContent>
+                          </Tooltip>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -209,6 +230,7 @@ export default function STOProjectsPage() {
               })}
             </TableBody>
           </Table>
+          </TooltipProvider>
         );
       default: return <div className="flex justify-center items-center h-64"><p>Loading...</p></div>;
     }
@@ -253,35 +275,36 @@ export default function STOProjectsPage() {
                     {isLoadingAssignableUsers ? (
                         <p>Loading users...</p>
                     ) : assignableUsers.length === 0 ? (
-                        <p className="text-muted-foreground text-sm">No active admin users available to assign.</p>
+                        <p className="text-muted-foreground text-sm">No active admin users available to assign for your account.</p>
                     ) : (
                         <ScrollArea className="h-60">
                             <FormField
                                 control={assignUsersForm.control}
                                 name="assignedAdminUserIds"
-                                render={({ field }) => (
+                                render={() => ( // No need for itemField at this top level
                                     <FormItem>
                                         {assignableUsers.map((user) => (
-                                            <FormField
+                                            <Controller
                                                 key={user.id}
                                                 control={assignUsersForm.control}
                                                 name="assignedAdminUserIds"
-                                                render={({ field: itemField }) => {
+                                                render={({ field }) => { // field here is for the assignedAdminUserIds array
                                                     return (
                                                         <FormItem key={user.id} className="flex flex-row items-center space-x-3 space-y-0 rounded-md border p-3 hover:bg-muted/50">
                                                             <FormControl>
                                                                 <Checkbox
-                                                                    checked={itemField.value?.includes(user.id)}
+                                                                    checked={field.value?.includes(user.id)}
                                                                     onCheckedChange={(checked) => {
+                                                                        const currentValues = field.value || [];
                                                                         return checked
-                                                                            ? itemField.onChange([...(itemField.value || []), user.id])
-                                                                            : itemField.onChange( (itemField.value || []).filter((value) => value !== user.id) );
+                                                                            ? field.onChange([...currentValues, user.id])
+                                                                            : field.onChange(currentValues.filter((value) => value !== user.id) );
                                                                     }}
                                                                 />
                                                             </FormControl>
                                                             <div className="space-y-1 leading-none">
                                                                 <FormLabel className="font-normal">{user.name} ({user.email})</FormLabel>
-                                                                <ShadFormDescription className="text-xs">{user.role}</ShadFormDescription>
+                                                                <ShadFormDescription className="text-xs capitalize">{user.role.replace('admin_','Admin ')}</ShadFormDescription>
                                                             </div>
                                                         </FormItem>
                                                     )

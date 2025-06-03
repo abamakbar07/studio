@@ -7,14 +7,17 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import type { StockItem } from "@/lib/types";
+import type { StockItem, SimplifiedSelectedProject } from "@/lib/types";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, Check, Save } from "lucide-react";
+import { ArrowLeft, Check, Save, FolderKanban, Info } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import React, { useEffect, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { z } from "zod";
+import { useUser } from "@/app/dashboard/layout";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+
 
 const stockItemSchema = z.object({
   id: z.string(),
@@ -30,7 +33,9 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
-const fetchFormItems = async (formId: string): Promise<StockItem[]> => {
+// MOCK: In a real scenario, this would fetch from Firestore based on formId AND selected project
+const fetchFormItems = async (formId: string, project?: SimplifiedSelectedProject | null): Promise<StockItem[]> => {
+  console.log(`Simulating fetch for form ${formId}, project: ${project?.name || 'N/A (Superuser or no project)'}`);
   await new Promise(resolve => setTimeout(resolve, 500)); 
   return [
     { id: "item-1", sku: "SKU001", description: "Item A - Blue Widget", sohQuantity: 100 },
@@ -45,8 +50,9 @@ export default function FormInputPage() {
   const params = useParams();
   const router = useRouter();
   const { toast } = useToast();
+  const { currentUser, selectedProject, isLoadingUser } = useUser();
   const formId = params.formId as string;
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingData, setIsLoadingData] = useState(true);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -55,33 +61,56 @@ export default function FormInputPage() {
     },
   });
 
-  const { fields, append, remove } = useFieldArray({
+  const { fields } = useFieldArray({
     control: form.control,
     name: "items",
   });
 
   useEffect(() => {
+    if (isLoadingUser) return; // Wait for user session to load
+
+    if (currentUser?.role !== 'superuser' && !selectedProject) {
+      // Admin without selected project shouldn't be here, redirect or show error
+      toast({ title: "Project Required", description: "Please select a project first.", variant: "destructive" });
+      router.push('/dashboard/select-project');
+      return;
+    }
+
     if (formId) {
-      setIsLoading(true);
-      fetchFormItems(formId).then(data => {
-        form.reset({ items: data.map(item => ({...item, physicalCount: item.physicalCount === undefined ? '' : String(item.physicalCount)})) });
-        setIsLoading(false);
+      setIsLoadingData(true);
+      fetchFormItems(formId, selectedProject).then(data => {
+        form.reset({ items: data.map(item => ({...item, physicalCount: item.physicalCount === undefined || item.physicalCount === null ? '' : String(item.physicalCount)})) });
+        setIsLoadingData(false);
       }).catch(err => {
         toast({ title: "Error", description: "Failed to load form items.", variant: "destructive"});
-        setIsLoading(false);
+        setIsLoadingData(false);
       });
     }
-  }, [formId, form, toast]);
+  }, [formId, form, toast, currentUser, selectedProject, isLoadingUser, router]);
 
   const onSubmit = (data: FormValues) => {
     toast({
-      title: "Data Saved",
-      description: `Physical counts for form ${formId} have been saved.`,
+      title: "Data Saved (Simulated)",
+      description: `Physical counts for form ${formId} (Project: ${selectedProject?.name || 'N/A'}) have been 'saved'. Backend integration is pending.`,
+      duration: 5000,
     });
+    console.log("Simulated save for form:", formId, "Project:", selectedProject?.name, "Data:", data);
   };
 
-  if (isLoading) {
+  if (isLoadingUser || isLoadingData) {
     return <div className="flex justify-center items-center h-64"><p>Loading form data...</p></div>;
+  }
+  
+  if (currentUser?.role !== 'superuser' && !selectedProject) {
+     return (
+        <Alert variant="default" className="border-yellow-500 text-yellow-700">
+            <Info className="h-5 w-5 text-yellow-600" />
+            <AlertTitle className="font-headline">Project Selection Required</AlertTitle>
+            <AlertDescription>
+            Admin users must have an active project selected to input form data.
+            </AlertDescription>
+        </Alert>
+     );
   }
 
   return (
@@ -92,8 +121,26 @@ export default function FormInputPage() {
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Forms
           </Link>
         </Button>
-        <h1 className="font-headline text-2xl">Input Data for Form: {formId}</h1>
+        <div className="text-right">
+            <h1 className="font-headline text-2xl">Input Data for Form: {formId}</h1>
+            {selectedProject && currentUser?.role !== 'superuser' && (
+                <p className="text-sm text-muted-foreground flex items-center justify-end">
+                    <FolderKanban className="h-4 w-4 mr-1.5 text-primary"/> Project: {selectedProject.name}
+                </p>
+            )}
+            {currentUser?.role === 'superuser' && (
+                 <p className="text-sm text-muted-foreground"> (Superuser view - project context would be selected elsewhere)</p>
+            )}
+        </div>
       </div>
+      
+      <Alert variant="default" className="border-blue-500 text-blue-700 bg-blue-50">
+          <Info className="h-5 w-5 text-blue-600" />
+          <AlertTitle className="font-headline">Simulated Functionality</AlertTitle>
+          <AlertDescription>
+          Data loading and saving for this form are currently simulated. Full integration with project-specific SOH data and Firestore persistence is under development.
+          </AlertDescription>
+      </Alert>
 
       <Card>
         <CardHeader>
@@ -162,7 +209,7 @@ export default function FormInputPage() {
             <CardFooter className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => router.back()}>Cancel</Button>
                 <Button type="submit" disabled={form.formState.isSubmitting}>
-                    <Save className="mr-2 h-4 w-4" /> {form.formState.isSubmitting ? "Saving..." : "Save Counts"}
+                    <Save className="mr-2 h-4 w-4" /> {form.formState.isSubmitting ? "Saving..." : "Save Counts (Simulated)"}
                 </Button>
             </CardFooter>
           </form>
