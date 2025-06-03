@@ -1,10 +1,10 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { db } from '@/lib/firebase/config';
-import { collection, addDoc, query, where, getDocs, doc, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, query, where, getDocs, doc, updateDoc, Timestamp, getDoc } from 'firebase/firestore';
 import type { User, STOProject, STOProjectStatus } from '@/lib/types';
 import { parse } from 'cookie';
-import { STO_PROJECT_STATUSES } from '@/lib/constants';
+import { STO_PROJECT_STATUS_LIST } from '@/lib/constants';
 
 // Helper function to get superuser from session
 async function getSuperuserFromSession(req: NextRequest): Promise<User | null> {
@@ -16,12 +16,15 @@ async function getSuperuserFromSession(req: NextRequest): Promise<User | null> {
   if (!sessionCookie) return null;
 
   try {
-    const superuserData = JSON.parse(sessionCookie) as User;
+    const superuserData = JSON.parse(sessionCookie) as User; // Assuming the cookie stores User object
     if (superuserData && superuserData.role === 'superuser') {
+      // Optionally, you might want to re-fetch the user from DB to ensure session is still valid
+      // For now, we'll trust the cookie data if it looks like a superuser.
       return superuserData;
     }
     return null;
   } catch (error) {
+    console.error("Error parsing session cookie in API:", error);
     return null;
   }
 }
@@ -110,24 +113,30 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ message: 'No update data provided.' }, { status: 400 });
     }
     
-    if (updateData.status && !STO_PROJECT_STATUSES.includes(updateData.status as STOProjectStatus)) {
+    if (updateData.status && !STO_PROJECT_STATUS_LIST.includes(updateData.status as STOProjectStatus)) {
         return NextResponse.json({ message: 'Invalid project status provided.' }, { status: 400 });
     }
 
 
     const projectDocRef = doc(db, 'sto_projects', projectId);
-    const projectDoc = await getDocs(query(collection(db, 'sto_projects'), where('__name__', '==', projectId), where('createdBy', '==', superuser.email)));
+    // Validate that the project belongs to the superuser before updating
+    const projectDocSnapshot = await getDoc(projectDocRef);
 
+    if (!projectDocSnapshot.exists()) {
+        return NextResponse.json({ message: 'Project not found.' }, { status: 404 });
+    }
 
-    if (projectDoc.empty) {
-      return NextResponse.json({ message: 'Project not found or you do not have permission to update it.' }, { status: 404 });
+    const projectData = projectDocSnapshot.data() as STOProject;
+    if (projectData.createdBy !== superuser.email) {
+        return NextResponse.json({ message: 'Forbidden: You do not have permission to update this project.' }, { status: 403 });
     }
     
-    const currentProjectData = projectDoc.docs[0].data() as STOProject;
+    const currentProjectData = projectDocSnapshot.data() as STOProject;
 
     // Basic status transition validation (can be expanded)
     // For example, prevent going from Archived to Planning directly without specific logic
     if (updateData.status && currentProjectData.status === "Archived" && updateData.status === "Planning") {
+        // Potentially allow unarchiving, but for now let's assume this might be restricted
         // return NextResponse.json({ message: 'Cannot directly move project from Archived to Planning.' }, { status: 400 });
     }
 
