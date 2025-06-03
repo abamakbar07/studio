@@ -1,7 +1,7 @@
 
 # StockFlow: Next Development Plan
 
-This document outlines potential future enhancements and features for the StockFlow application. The primary goal of StockFlow is to support the Stock Take process within warehouse operations. 
+This document outlines potential future enhancements and features for the StockFlow application. The primary goal of StockFlow is to support the Stock Take process within warehouse operations.
 **A core architectural direction is to evolve StockFlow into a Project-Based system.** This means Super Users will be able to manage multiple distinct **Stock Take Operation (STO) Projects** (or "Events"). Each project will encapsulate its own SOH data, forms, physical counts, variances, and potentially assigned Admin Users, allowing for better organization and data segregation for different clients, departments, or specific stock-take initiatives.
 
 Future developments should align with improving accuracy, transparency, and efficiency within this project-based framework.
@@ -11,11 +11,11 @@ Future developments should align with improving accuracy, transparency, and effi
 *   **Robust Session Management:**
     *   Implement a more comprehensive session management solution (e.g., `next-auth` with JWTs, refresh tokens, and secure cookie handling) to replace or augment the current basic cookie system.
 *   **Project-Scoped Firebase Security Rules:**
-    *   Conduct a thorough review and strengthening of Firebase Security Rules for Firestore to ensure least-privilege access.
+    *   Conduct a thorough review and strengthening of Firebase Security Rules for Firestore to ensure least-privilege access. **[Initial rules conceptualized for STO Projects, needs full implementation and testing]**
     *   Rules must be **project-aware**, ensuring users (Super Users and Admin Users) can only access data related to projects they own or are assigned to.
     *   Define data ownership clearly: Super User owns STO Projects; Admin Users are assigned to projects.
 *   **Input Validation & Sanitization:**
-    *   Implement comprehensive server-side and client-side input validation and sanitization for all user inputs, API requests, and forms to prevent XSS, injection attacks, and other vulnerabilities. This is especially important for data related to stock counts and SOH uploads *within specific projects*.
+    *   Implement comprehensive server-side and client-side input validation and sanitization for all user inputs, API requests, and forms to prevent XSS, injection attacks, and other vulnerabilities. This is especially important for data related to stock counts and SOH uploads *within specific projects*. **[Basic validation implemented for STO Project creation/update]**
 *   **API Rate Limiting & Security Headers:**
     *   Implement rate limiting on critical API endpoints (e.g., login, registration, data upload, project creation).
     *   Add security headers (e.g., Content Security Policy (CSP), HTTP Strict Transport Security (HSTS), X-Frame-Options).
@@ -27,9 +27,9 @@ Future developments should align with improving accuracy, transparency, and effi
 The following core functionality improvements are central to the project-based architecture.
 
 *   **A. STO Project Management (Foundation):**
-    *   **Project Creation & Lifecycle:** Super Users can create, name, describe, and manage the lifecycle (e.g., Planning, Active, Counting, Verification, Completed, Archived) of STO Projects.
-    *   **Project Association:** Ability to associate projects with specific clients, internal departments, or other relevant entities.
-    *   **Project-Specific Settings:** Define project-specific parameters or configurations if needed.
+    *   **Project Creation & Lifecycle:** Super Users can create, name, describe, and manage the lifecycle (e.g., Planning, Active, Counting, Verification, Completed, Archived) of STO Projects. **[DONE - Initial implementation: Superusers can create projects with name, description, client/department, notes, and update status. API and UI in place.]**
+    *   **Project Association:** Ability to associate projects with specific clients, internal departments, or other relevant entities. **[DONE - Basic free-text fields for client and department names implemented.]**
+    *   **Project-Specific Settings:** Define project-specific parameters or configurations if needed. **[DONE - Basic notes field for settings implemented.]**
     *   **Admin User Assignment to Projects:** Super Users can assign their Admin Users to one or more STO Projects, thereby scoping their access and tasks.
 *   **B. SOH Data Processing & Storage (Per Project):**
     *   SOH data uploads are now **scoped to a specific STO Project**.
@@ -90,7 +90,7 @@ The following core functionality improvements are central to the project-based a
 *   **Data Import/Export:**
     *   Provide more robust options for exporting various data sets (user lists, form data with counts, SOH data, variance reports), with clear options for **project-scoped exports**.
 *   **Data Structures for Project-Based Architecture:**
-    *   Firestore data structures (collections, documents) must be designed to efficiently support project-based querying and data isolation (e.g., using `projectId` as a key field in relevant documents).
+    *   Firestore data structures (collections, documents) must be designed to efficiently support project-based querying and data isolation (e.g., using `projectId` as a key field in relevant documents). **[Initial structure for `sto_projects` collection implemented.]**
 
 ## IV. GenAI Integration (Leveraging Project Data)
 
