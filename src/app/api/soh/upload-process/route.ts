@@ -26,7 +26,6 @@ async function getUserFromSession(req: NextRequest): Promise<User | null> {
   }
 }
 
-// Updated to match user's Excel column names
 interface ExpectedRow {
   sku: string;
   sku_description: string;
@@ -87,17 +86,16 @@ export async function POST(req: NextRequest) {
     const jsonData = xlsx.utils.sheet_to_json<ExpectedRow>(worksheet, { defval: null });
 
     if (!jsonData || jsonData.length === 0) {
-      await updateDoc(doc(db, 'soh_data_references', sohReferenceDocId), { status: 'ValidationError' as SOHDataReferenceStatus, errorMessage: 'File is empty or has no data in the first sheet.' });
+      await updateDoc(doc(db, 'soh_data_references', sohReferenceDocId), { status: 'ValidationError' as SOHDataReferenceStatus, errorMessage: 'File is empty or has no data in the first sheet.', rowCount: 0 });
       return NextResponse.json({ message: 'File is empty or has no data.' }, { status: 400 });
     }
     
     const headers = xlsx.utils.sheet_to_json<any>(worksheet, { header: 1 })[0] as string[];
-    // Updated required headers to match user's file
     const requiredHeaders = ['sku', 'sku_description', 'qty_on_hand']; 
     for (const header of requiredHeaders) {
         if (!headers.includes(header)) {
             const errorMessage = `Missing required header: ${header}. Check column names in your Excel file. Required: ${requiredHeaders.join(', ')}. Optional: loc.`;
-            await updateDoc(doc(db, 'soh_data_references', sohReferenceDocId), { status: 'ValidationError' as SOHDataReferenceStatus, errorMessage });
+            await updateDoc(doc(db, 'soh_data_references', sohReferenceDocId), { status: 'ValidationError' as SOHDataReferenceStatus, errorMessage, rowCount: 0 });
             return NextResponse.json({ message: errorMessage }, { status: 400 });
         }
     }
@@ -106,7 +104,7 @@ export async function POST(req: NextRequest) {
     
     let currentBatch = writeBatch(db);
     let operationsInBatch = 0;
-    const MAX_OPERATIONS_PER_BATCH = 490; // Firestore batch limit is 500
+    const MAX_OPERATIONS_PER_BATCH = 490; 
     let validRowCount = 0;
     const validationErrors: string[] = [];
 
@@ -156,12 +154,13 @@ export async function POST(req: NextRequest) {
             status: 'ValidationError' as SOHDataReferenceStatus, 
             errorMessage: `No valid data found. ${validationErrors.length} rows had issues. First few errors: ${validationErrors.slice(0,5).join('; ')}`,
             processedAt: Timestamp.now().toDate().toISOString(),
+            rowCount: 0, // Ensure rowCount is explicitly 0
         });
         return NextResponse.json({ message: `Upload failed: No valid data found. ${validationErrors.join('; ')}` }, { status: 400 });
     }
     
-    const finalStatus: SOHDataReferenceStatus = validationErrors.length > 0 && validRowCount > 0 ? 'Completed' : 'Completed'; // Marking 'Completed' even with row errors, error details in errorMessage
-    const finalErrorMessage = validationErrors.length > 0 ? `Completed with ${validationErrors.length} row error(s). First few: ${validationErrors.slice(0,3).join('; ')}` : undefined;
+    const finalStatus: SOHDataReferenceStatus = 'Completed';
+    const finalErrorMessage = validationErrors.length > 0 ? `Completed with ${validationErrors.length} row error(s). First few: ${validationErrors.slice(0,3).join('; ')}` : null;
 
     await updateDoc(doc(db, 'soh_data_references', sohReferenceDocId), {
       status: finalStatus,
@@ -185,8 +184,9 @@ export async function POST(req: NextRequest) {
         try {
             await updateDoc(doc(db, 'soh_data_references', sohReferenceDocId), { 
                 status: 'SystemError' as SOHDataReferenceStatus, 
-                errorMessage: `System error during processing: ${errorMessage}`,
+                errorMessage: `System error during processing: ${errorMessage.substring(0, 1000)}`, // Limit error message length
                 processedAt: Timestamp.now().toDate().toISOString(),
+                rowCount: 0,
             });
         } catch (updateError) {
             console.error('Failed to update SOH reference on error:', updateError);
@@ -195,3 +195,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ message: 'Failed to process SOH file.', error: errorMessage }, { status: 500 });
   }
 }
+
