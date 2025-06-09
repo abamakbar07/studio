@@ -8,8 +8,8 @@ import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import type { SOHDataReference, STOProject, User, SOHDataReferenceStatus } from "@/lib/types";
-import { UploadCloud, CheckCircle, XCircle, FileCheck2, AlertCircle, FolderKanban, Info, AlertTriangle, Loader2 } from "lucide-react";
+import type { SOHDataReference, STOProject, User } from "@/lib/types";
+import { UploadCloud, CheckCircle, XCircle, FileCheck2, AlertTriangle, FolderKanban, Info, Loader2 } from "lucide-react";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useUser } from "@/app/dashboard/layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -58,34 +58,29 @@ export default function UploadSohPage() {
     }
   }, [currentUser?.role, toast]);
 
-  const fetchSohReferences = useCallback(async (projectId: string | undefined) => {
-    if (!projectId) {
+  const fetchSohReferences = useCallback(async (projectIdToFetch: string | undefined) => {
+    if (!projectIdToFetch) {
       setUploadedReferences([]);
       setIsLoadingReferences(false);
       return;
     }
     setIsLoadingReferences(true);
     try {
-      // TODO: Implement actual API call: GET /api/soh/references?stoProjectId=<id>
-      // For now, we'll rely on local updates for the table and clear it if the project context changes
-      // to avoid showing stale data. A full fetch would be better for multi-user or multi-session scenarios.
-      if (projectId !== prevEffectiveProjectIdRef.current) { // If project context truly changed
-           setUploadedReferences([]); // Clear old project's references before "fetching" new ones or if it's the first load
+      const response = await fetch(`/api/soh/references?stoProjectId=${projectIdToFetch}`);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to fetch SOH references.');
       }
-      console.log("Placeholder: Would fetch SOH references for project", projectId);
-      // Example:
-      // const response = await fetch(`/api/soh/references?stoProjectId=${projectId}`);
-      // if (!response.ok) throw new Error('Failed to fetch SOH references.');
-      // const data: SOHDataReference[] = await response.json();
-      // setUploadedReferences(data.sort((a,b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()));
-      
+      const data: SOHDataReference[] = await response.json();
+      // No need to sort here if API already sorts by processedAt desc
+      setUploadedReferences(data); 
     } catch (error) {
-      toast({ title: "Error", description: "Could not fetch SOH references for the project.", variant: "destructive" });
+      toast({ title: "Error", description: `Could not fetch SOH references: ${(error as Error).message}`, variant: "destructive" });
       setUploadedReferences([]);
     } finally {
       setIsLoadingReferences(false);
     }
-  }, [toast]); 
+  }, [toast]); // Removed setUploadedReferences and setIsLoadingReferences as they are stable
 
   useEffect(() => {
     if (currentUser?.role === 'superuser') {
@@ -101,6 +96,7 @@ export default function UploadSohPage() {
       effectiveProjectId = selectedProject.id;
     }
 
+    // Only fetch if the effective project ID has actually changed or on initial relevant load
     if (prevEffectiveProjectIdRef.current !== effectiveProjectId) {
       fetchSohReferences(effectiveProjectId);
     }
@@ -147,11 +143,12 @@ export default function UploadSohPage() {
     formData.append('file', selectedFile);
     formData.append('stoProjectId', currentStoProjectId);
     
+    // Simulate initial upload progress
     let progressInterval = setInterval(() => {
         setUploadProgress(prev => {
             if (prev >= 50) { 
                  clearInterval(progressInterval);
-                 return 50;
+                 return 50; // Cap at 50 for upload phase
             }
             return prev + 10;
         });
@@ -166,7 +163,7 @@ export default function UploadSohPage() {
       
       clearInterval(progressInterval); 
       setCurrentStatusMessage("File uploaded. Server is processing...");
-      setUploadProgress(75); 
+      setUploadProgress(75); // Indicate server processing has started
 
       const result: UploadResult = await response.json();
 
@@ -182,23 +179,10 @@ export default function UploadSohPage() {
         duration: 7000,
       });
 
-      const newReference: SOHDataReference = {
-        id: result.sohDataReferenceId || crypto.randomUUID(), 
-        filename: selectedFile.name,
-        uploadedBy: currentUser?.email || 'unknown',
-        uploadedAt: new Date().toISOString(),
-        rowCount: result.itemsProcessed || 0,
-        status: result.errors && result.errors.length > 0 && result.itemsProcessed === 0 ? 'ValidationError' : result.errors && result.errors.length > 0 ? 'Completed' : 'Completed',
-        stoProjectId: currentStoProjectId,
-        errorMessage: result.errors ? result.errors.join('; ') : undefined,
-        size: selectedFile.size,
-        contentType: selectedFile.type,
-        processedAt: new Date().toISOString(), 
-      };
-      setUploadedReferences(prev => [newReference, ...prev].sort((a,b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()));
+      // After successful upload, re-fetch the references for the current project
+      fetchSohReferences(currentStoProjectId); 
       
       setSelectedFile(null);
-      // Clear file input visually
       const fileInput = document.getElementById('file-upload') as HTMLInputElement;
       if (fileInput) fileInput.value = '';
 
@@ -268,6 +252,12 @@ export default function UploadSohPage() {
                 value={projectForUpload} 
                 onValueChange={(value) => {
                   setProjectForUpload(value);
+                  // When superuser changes project, clear file selection and progress
+                  setSelectedFile(null);
+                  setUploadProgress(0);
+                  setCurrentStatusMessage(null);
+                  const fileInput = document.getElementById('file-upload') as HTMLInputElement;
+                  if (fileInput) fileInput.value = '';
                 }}
                 disabled={isLoadingProjects || userProjects.length === 0 || isProcessing}
               >
@@ -308,7 +298,7 @@ export default function UploadSohPage() {
               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               onChange={handleFileChange}
               className="file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 disabled:opacity-70"
-              disabled={isProcessing || (currentUser?.role === 'superuser' && !projectForUpload && userProjects.length > 0 && !isLoadingProjects) }
+              disabled={isProcessing || (currentUser?.role === 'superuser' && !projectForUpload && !isLoadingProjects) }
             />
             {selectedFile && <p className="mt-2 text-sm text-muted-foreground">Selected: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)</p>}
           </div>
@@ -338,7 +328,7 @@ export default function UploadSohPage() {
              <FileCheck2 className="mr-2 h-5 w-5 text-accent" />
             Uploaded SOH Data References
           </CardTitle>
-          <CardDescription>List of SOH files processed and their status. 
+          <CardDescription>List of SOH files processed for the current project context.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -346,7 +336,7 @@ export default function UploadSohPage() {
             <div className="flex items-center justify-center py-4"> <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading references...</div>
           ) : uploadedReferences.length === 0 ? (
             <p className="text-muted-foreground py-4 text-center">No SOH data files have been processed for {
-                currentUser?.role === 'superuser' ? (projectForUpload ? `project ${getProjectNameById(projectForUpload)}` : "the selected project context") : (selectedProject ? `project ${selectedProject.name}` : "your project")
+                currentUser?.role === 'superuser' ? (projectForUpload ? `project ${getProjectNameById(projectForUpload)}` : "the selected project context (select a project above)") : (selectedProject ? `project ${selectedProject.name}` : "your project")
             }.</p>
           ) : (
             <div className="overflow-x-auto">
@@ -355,7 +345,7 @@ export default function UploadSohPage() {
                 <TableRow>
                   <TableHead>Filename</TableHead>
                   <TableHead>Project</TableHead>
-                  <TableHead>Uploaded At</TableHead>
+                  <TableHead>Processed At</TableHead>
                   <TableHead>Items</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Details</TableHead>
@@ -364,14 +354,14 @@ export default function UploadSohPage() {
               <TableBody>
                 {uploadedReferences.map((ref) => (
                   <TableRow key={ref.id}>
-                    <TableCell className="font-medium max-w-xs truncate" title={ref.filename}>{ref.filename}</TableCell>
+                    <TableCell className="font-medium max-w-xs truncate" title={ref.originalFilename || ref.filename}>{ref.originalFilename || ref.filename}</TableCell>
                     <TableCell className="text-sm max-w-[150px] truncate" title={getProjectNameById(ref.stoProjectId)}>{getProjectNameById(ref.stoProjectId)}</TableCell>
                     <TableCell>{ref.processedAt ? format(new Date(ref.processedAt), 'PPpp') : (ref.uploadedAt ? format(new Date(ref.uploadedAt), 'PPpp') : 'N/A')}</TableCell>
                     <TableCell>{ref.rowCount}</TableCell>
                     <TableCell>
                       <span className={`flex items-center px-2 py-0.5 text-xs rounded-full whitespace-nowrap ${
                         ref.status === "Completed" && !ref.errorMessage ? "bg-green-100 text-green-700" :
-                        ref.status === "Completed" && ref.errorMessage ? "bg-yellow-100 text-yellow-700" : // Completed with errors
+                        ref.status === "Completed" && ref.errorMessage ? "bg-yellow-100 text-yellow-700" : 
                         ref.status === "Processing" || ref.status === "Storing" || ref.status === "Validating" || ref.status === "Uploading" ? "bg-blue-100 text-blue-700" : 
                         ref.status === "ValidationError" || ref.status === "StorageError" || ref.status === "UploadError" || ref.status === "SystemError" ? "bg-red-100 text-red-700" : 
                         "bg-gray-100 text-gray-700" 
@@ -383,8 +373,8 @@ export default function UploadSohPage() {
                         {ref.status}
                       </span>
                     </TableCell>
-                     <TableCell className="text-xs text-muted-foreground max-w-md truncate" title={ref.errorMessage}>
-                        {ref.errorMessage || (ref.status === "Completed" && ref.rowCount > 0 && !ref.errorMessage ? "Successfully processed." : ref.status === "Completed" && ref.rowCount === 0 ? "Processed, but no valid items found." : "-")}
+                     <TableCell className="text-xs text-muted-foreground max-w-md truncate" title={ref.errorMessage || undefined}>
+                        {ref.errorMessage || (ref.status === "Completed" && ref.rowCount > 0 && !ref.errorMessage ? "Successfully processed." : ref.status === "Completed" && ref.rowCount === 0 ? "Processed, no valid items." : "-")}
                      </TableCell>
                   </TableRow>
                 ))}
