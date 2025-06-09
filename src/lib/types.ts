@@ -37,17 +37,21 @@ export interface StockForm {
   stoProjectId?: string; // Link to the STO Project
 }
 
-export type SOHDataReferenceStatus = 
-  | "Pending"
-  | "Uploading"
-  | "Processing"
-  | "Validating"
-  | "Storing"
-  | "Completed"
-  | "ValidationError"
-  | "StorageError"
-  | "UploadError"
-  | "SystemError";
+export const SOH_DATA_REFERENCE_STATUSES = [
+  "Pending", 
+  "Uploading", 
+  "Processing", 
+  "Validating", 
+  "Storing", 
+  "Completed", 
+  "ValidationError", 
+  "StorageError", 
+  "UploadError", 
+  "SystemError",
+  "Pending Deletion" 
+] as const;
+
+export type SOHDataReferenceStatus = typeof SOH_DATA_REFERENCE_STATUSES[number];
 
 export interface SOHDataReference {
   id: string; // Firestore document ID
@@ -62,15 +66,17 @@ export interface SOHDataReference {
   errorMessage?: string | null; // Allow null for Firestore
   contentType?: string;
   size?: number;
-  isLocked?: boolean; // New field for locking
+  isLocked?: boolean;
+  deleteApprovalToken?: string | null;
+  deleteApprovalTokenExpires?: string | null; // ISO string
 }
 
 
 export interface StockItem {
-  id: string; // Firestore document ID
-  sku: string; // Essential
-  sku_description: string; // Essential
-  qty_on_hand: number; // Essential
+  id?: string; // Firestore document ID (can be optional if we let Firestore generate it)
+  sku: string; 
+  sku_description: string;
+  qty_on_hand: number;
   
   form_no?: string | null;
   storerkey?: string;
@@ -82,10 +88,10 @@ export interface StockItem {
   lottable01?: string;
   project_scope?: string;
   lottable10?: string;
-  project_id?: string; // This is project_id from the file, not to be confused with stoProjectId
+  project_id?: string; 
   wbs_element?: string;
   skugrp?: string;
-  received_date?: string; // Store as ISO string e.g., YYYY-MM-DD
+  received_date?: string; 
   huid?: string;
   owner_id?: string;
   stdcube?: number;
@@ -93,9 +99,9 @@ export interface StockItem {
   physicalCount?: number | null;
   variance?: number;
   
-  stoProjectId: string; // Link to the STO Project this item belongs to
-  sohDataReferenceId: string; // Link to the SOHDataReference document this item came from
-  formId?: string; // Link to the StockForm if item is on a count sheet
+  stoProjectId: string; 
+  sohDataReferenceId: string; 
+  formId?: string; 
 }
 
 export const STO_PROJECT_STATUSES = ["Planning", "Active", "Counting", "Verification", "Completed", "Archived"] as const;

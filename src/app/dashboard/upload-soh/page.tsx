@@ -7,17 +7,17 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import type { SOHDataReference, STOProject } from "@/lib/types";
-import { UploadCloud, CheckCircle, AlertTriangle, FileCheck2, FolderKanban, Info, Loader2, Lock, Unlock, Trash2 } from "lucide-react";
+import type { SOHDataReference, STOProject, SOHDataReferenceStatus } from "@/lib/types";
+import { UploadCloud, FolderKanban, Info, Loader2, Lock, Unlock, Trash2, Hourglass, AlertTriangle, CheckCircle2 } from "lucide-react";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useUser } from "@/app/dashboard/layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import Link from "next/link";
 import { format } from 'date-fns';
+import { getSohRefStatusClass, getSohRefStatusIcon } from "@/lib/constants";
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
@@ -72,12 +72,18 @@ export default function UploadSohPage() {
       const response = await fetch(`/api/soh/references?stoProjectId=${projectIdToFetch}`);
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to fetch SOH references.');
+        const errorMessage = errorData.error && typeof errorData.error === 'string' && errorData.error.includes("https://console.firebase.google.com") 
+          ? "Query requires an index. Please check the browser console for a link to create it in Firebase."
+          : errorData.message || 'Failed to fetch SOH references.';
+        if (errorData.error && typeof errorData.error === 'string' && errorData.error.includes("https://console.firebase.google.com")) {
+            console.error("Firestore Index Required:", errorData.error);
+        }
+        throw new Error(errorMessage);
       }
       const data: SOHDataReference[] = await response.json();
       setUploadedReferences(data); 
     } catch (error) {
-      toast({ title: "Error", description: `Could not fetch SOH references: ${(error as Error).message}`, variant: "destructive" });
+      toast({ title: "Error Fetching SOH References", description: (error as Error).message, variant: "destructive", duration: 10000 });
       setUploadedReferences([]);
     } finally {
       setIsLoadingReferences(false);
@@ -103,7 +109,7 @@ export default function UploadSohPage() {
         fetchSohReferences(effectiveProjectId);
       } else { 
         setUploadedReferences([]);
-        setIsLoadingReferences(false);
+        // No need to set isLoadingReferences to false here, fetchSohReferences handles it or if no projectIdToFetch
       }
     }
     prevEffectiveProjectIdRef.current = effectiveProjectId;
@@ -219,7 +225,6 @@ export default function UploadSohPage() {
         throw new Error(result.message || 'Failed to update lock status.');
       }
       toast({ title: "Success", description: result.message });
-      // Refresh the list
       const currentStoProjectId = currentUser?.role === 'superuser' ? projectForUpload : selectedProject?.id;
       if (currentStoProjectId) {
         fetchSohReferences(currentStoProjectId);
@@ -229,6 +234,27 @@ export default function UploadSohPage() {
       toast({ title: "Error", description: errorMessage, variant: "destructive" });
     }
   };
+
+  const handleInitiateDeleteReference = async (referenceId: string) => {
+    try {
+      const response = await fetch(`/api/soh/references/${referenceId}/delete-request`, {
+        method: 'POST',
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to initiate deletion process.');
+      }
+      toast({ title: "Deletion Requested", description: result.message, duration: 7000 });
+      const currentStoProjectId = currentUser?.role === 'superuser' ? projectForUpload : selectedProject?.id;
+      if (currentStoProjectId) {
+        fetchSohReferences(currentStoProjectId);
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
+    }
+  };
+  
   
   const getProjectNameById = (projectId?: string): string => {
     if (!projectId) return "N/A";
@@ -267,7 +293,7 @@ export default function UploadSohPage() {
             Upload Stock On Hand (SOH) Data
           </CardTitle>
           <CardDescription>
-            Upload SOH data from XLSX files. Max file size: 100MB. Ensure columns: <strong>sku, sku_description, qty_on_hand</strong> (required). Additional supported columns like <strong>loc, lot, storerkey, form_no</strong> etc., will also be processed if present.
+            Upload SOH data from XLSX files. Max file size: 100MB. Required columns: <strong>sku, sku_description, qty_on_hand</strong>. Additional supported columns (e.g., <strong>loc, lot, storerkey, form_no</strong>, etc.) will also be processed if present.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -380,27 +406,24 @@ export default function UploadSohPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {uploadedReferences.map((ref) => (
-                  <TableRow key={ref.id} className={ref.isLocked ? 'opacity-70 bg-muted/30' : ''}>
+                {uploadedReferences.map((ref) => {
+                  const StatusIcon = getSohRefStatusIcon(ref.status, ref.errorMessage);
+                  const statusClass = getSohRefStatusClass(ref.status, ref.errorMessage);
+                  const isDeletePending = ref.status === 'Pending Deletion' && ref.deleteApprovalToken && new Date(ref.deleteApprovalTokenExpires || 0) > new Date();
+
+                  return (
+                  <TableRow key={ref.id} className={ref.isLocked || isDeletePending ? 'opacity-70 bg-muted/30' : ''}>
                     <TableCell className="font-medium max-w-xs truncate" title={ref.originalFilename || ref.filename}>
                         {ref.isLocked && <Lock className="h-3 w-3 mr-1.5 inline-block text-amber-600" />}
+                        {isDeletePending && <Hourglass className="h-3 w-3 mr-1.5 inline-block text-orange-500" />}
                         {ref.originalFilename || ref.filename}
                     </TableCell>
                     <TableCell className="text-sm max-w-[150px] truncate" title={getProjectNameById(ref.stoProjectId)}>{getProjectNameById(ref.stoProjectId)}</TableCell>
                     <TableCell>{ref.uploadedAt ? format(new Date(ref.uploadedAt), 'PPp') : 'N/A'}</TableCell>
                     <TableCell>{ref.rowCount}</TableCell>
                     <TableCell>
-                      <span className={`flex items-center px-2 py-0.5 text-xs rounded-full whitespace-nowrap ${
-                        ref.status === "Completed" && !ref.errorMessage ? "bg-green-100 text-green-700" :
-                        ref.status === "Completed" && ref.errorMessage ? "bg-yellow-100 text-yellow-700" : 
-                        ref.status === "Processing" || ref.status === "Storing" || ref.status === "Validating" || ref.status === "Uploading" ? "bg-blue-100 text-blue-700" : 
-                        ref.status === "ValidationError" || ref.status === "StorageError" || ref.status === "SystemError" || ref.status === "UploadError" ? "bg-red-100 text-red-700" : 
-                        "bg-gray-100 text-gray-700" 
-                      }`}>
-                        {ref.status === "Completed" && !ref.errorMessage && <CheckCircle className="mr-1 h-3 w-3" />}
-                        {(ref.status === "Completed" && ref.errorMessage) && <AlertTriangle className="mr-1 h-3 w-3" />}
-                        {(ref.status === "ValidationError" || ref.status === "StorageError" || ref.status === "SystemError" || ref.status === "UploadError") && <AlertTriangle className="mr-1 h-3 w-3" />}
-                        {(ref.status === "Processing" || ref.status === "Storing" || ref.status === "Validating" || ref.status === "Uploading") && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+                      <span className={`flex items-center px-2 py-0.5 text-xs rounded-full whitespace-nowrap ${statusClass}`}>
+                        <StatusIcon className="mr-1 h-3 w-3" />
                         {ref.status}
                       </span>
                     </TableCell>
@@ -411,24 +434,48 @@ export default function UploadSohPage() {
                         <TableCell className="text-right space-x-1">
                            <Tooltip>
                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="icon" onClick={() => handleToggleLock(ref.id, !!ref.isLocked)} className="h-8 w-8">
+                                <Button variant="ghost" size="icon" onClick={() => handleToggleLock(ref.id, !!ref.isLocked)} className="h-8 w-8" disabled={isProcessing || isDeletePending}>
                                     {ref.isLocked ? <Unlock className="h-4 w-4 text-green-600" /> : <Lock className="h-4 w-4 text-amber-600" />}
                                 </Button>
                              </TooltipTrigger>
-                             <TooltipContent><p>{ref.isLocked ? "Unlock Reference (allows use in forms)" : "Lock Reference (prevents use in forms)"}</p></TooltipContent>
+                             <TooltipContent><p>{ref.isLocked ? "Unlock Reference" : "Lock Reference"}</p></TooltipContent>
                            </Tooltip>
-                           <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8" disabled>
-                                        <Trash2 className="h-4 w-4 text-destructive" />
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent><p>Delete Reference (Coming Soon)</p></TooltipContent>
-                           </Tooltip>
+                           <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                               <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8" disabled={isProcessing || isDeletePending || ref.isLocked}>
+                                            <Trash2 className="h-4 w-4 text-destructive" />
+                                        </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent><p>{isDeletePending ? "Deletion Pending Approval" : (ref.isLocked ? "Unlock to delete" : "Request Deletion")}</p></TooltipContent>
+                                </Tooltip>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>Request SOH Reference Deletion?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        This will send a deletion request to the Super Administrator for the SOH reference:
+                                        <br /><strong>{ref.originalFilename || ref.filename}</strong> (Project: {getProjectNameById(ref.stoProjectId)}).
+                                        <br />This action cannot be immediately undone after administrator approval. All associated stock items will also be deleted.
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                        onClick={() => handleInitiateDeleteReference(ref.id)}
+                                        className="bg-destructive hover:bg-destructive/90"
+                                    >
+                                        Request Deletion
+                                    </AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                           </AlertDialog>
                         </TableCell>
                      )}
                   </TableRow>
-                ))}
+                );
+              })}
               </TableBody>
             </Table>
             </div>
