@@ -38,48 +38,65 @@ export interface StockForm {
 }
 
 export type SOHDataReferenceStatus = 
-  | "Pending"          // Initial state after file select, before upload/processing starts
-  | "Uploading"        // File is being uploaded to server
-  | "Processing"       // Server received file, initial parsing started
-  | "Validating"       // Server is validating data structure and content
-  | "Storing"          // Server is writing valid data to Firestore
-  | "Completed"        // All data successfully stored
-  | "ValidationError"  // Data failed validation checks
-  | "StorageError"     // Error occurred during Firestore write
-  | "UploadError"      // Error during file upload itself
-  | "SystemError";     // Generic server-side error during processing
+  | "Pending"
+  | "Uploading"
+  | "Processing"
+  | "Validating"
+  | "Storing"
+  | "Completed"
+  | "ValidationError"
+  | "StorageError"
+  | "UploadError"
+  | "SystemError";
 
 export interface SOHDataReference {
   id: string; // Firestore document ID
   filename: string;
-  originalFilename?: string; // If we rename it on server
+  originalFilename?: string;
   uploadedBy: string; // User ID or email
-  uploadedAt: string; // ISO string - when upload initiated client-side
-  processedAt?: string; // ISO string - when server finished processing
-  rowCount: number; // Number of valid items processed and stored
+  uploadedAt: string; // ISO string
+  processedAt?: string; // ISO string
+  rowCount: number;
   status: SOHDataReferenceStatus;
-  stoProjectId: string; // Link to the STO Project
-  errorMessage?: string; // If status is Error, ValidationError, or StorageError
-  contentType?: string; // e.g., application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
-  size?: number; // file size in bytes
+  stoProjectId: string;
+  errorMessage?: string | null; // Allow null for Firestore
+  contentType?: string;
+  size?: number;
 }
 
 
 export interface StockItem {
-  id: string; // Firestore document ID (can be auto-generated or SKU if unique per project+soh_ref)
-  sku: string;
-  description: string;
-  sohQuantity: number; // From uploaded SOH
-  location?: string; // Optional, from SOH
-  physicalCount?: number | null; // From direct input
+  id: string; // Firestore document ID
+  sku: string; // Essential
+  sku_description: string; // Essential (was 'description')
+  qty_on_hand: number; // Essential
+  
+  form_no?: string | null;
+  storerkey?: string;
+  loc?: string;
+  lot?: string;
+  item_id?: string;
+  qty_allocated?: number;
+  qty_available?: number;
+  lottable01?: string;
+  project_scope?: string;
+  lottable10?: string;
+  project_id?: string; // This is project_id from the file, not to be confused with stoProjectId
+  wbs_element?: string;
+  skugrp?: string;
+  received_date?: string; // Store as ISO string e.g., YYYY-MM-DD
+  huid?: string;
+  owner_id?: string;
+  stdcube?: number;
+
+  physicalCount?: number | null;
   variance?: number;
-  stoProjectId: string; // Link to the STO Project
-  sohDataReferenceId: string; // Link to the SOHDataReference document
+  
+  stoProjectId: string; // Link to the STO Project this item belongs to
+  sohDataReferenceId: string; // Link to the SOHDataReference document this item came from
   formId?: string; // Link to the StockForm if item is on a count sheet
-  // Potentially: unitOfMeasure, category, etc.
 }
 
-// STO Project Management
 export const STO_PROJECT_STATUSES = ["Planning", "Active", "Counting", "Verification", "Completed", "Archived"] as const;
 export type STOProjectStatus = typeof STO_PROJECT_STATUSES[number];
 
@@ -90,11 +107,11 @@ export interface STOProject {
   status: STOProjectStatus;
   clientName?: string;
   departmentName?: string;
-  settingsNotes?: string; // General notes for project-specific settings
-  createdBy: string; // Email of the superuser who created the project
-  createdAt: string; // ISO string
-  updatedAt: string; // ISO string
-  assignedAdminUserIds?: string[]; // Array of User IDs for assigned admin users
+  settingsNotes?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  assignedAdminUserIds?: string[];
 }
 
 export interface SimplifiedSelectedProject {

@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import type { SOHDataReference, STOProject, User } from "@/lib/types";
-import { UploadCloud, CheckCircle, XCircle, FileCheck2, AlertTriangle, FolderKanban, Info, Loader2 } from "lucide-react";
+import { UploadCloud, CheckCircle, AlertTriangle, FileCheck2, FolderKanban, Info, Loader2 } from "lucide-react"; // Removed XCircle as AlertTriangle covers errors
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useUser } from "@/app/dashboard/layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -72,7 +72,6 @@ export default function UploadSohPage() {
         throw new Error(errorData.message || 'Failed to fetch SOH references.');
       }
       const data: SOHDataReference[] = await response.json();
-      // No need to sort here if API already sorts by processedAt desc
       setUploadedReferences(data); 
     } catch (error) {
       toast({ title: "Error", description: `Could not fetch SOH references: ${(error as Error).message}`, variant: "destructive" });
@@ -80,7 +79,7 @@ export default function UploadSohPage() {
     } finally {
       setIsLoadingReferences(false);
     }
-  }, [toast]); // Removed setUploadedReferences and setIsLoadingReferences as they are stable
+  }, [toast]);
 
   useEffect(() => {
     if (currentUser?.role === 'superuser') {
@@ -96,9 +95,13 @@ export default function UploadSohPage() {
       effectiveProjectId = selectedProject.id;
     }
 
-    // Only fetch if the effective project ID has actually changed or on initial relevant load
     if (prevEffectiveProjectIdRef.current !== effectiveProjectId) {
-      fetchSohReferences(effectiveProjectId);
+      if (effectiveProjectId) { // Only fetch if there's an actual project ID
+        fetchSohReferences(effectiveProjectId);
+      } else { // If no project ID, clear references
+        setUploadedReferences([]);
+        setIsLoadingReferences(false); // Ensure loading state is false
+      }
     }
     prevEffectiveProjectIdRef.current = effectiveProjectId;
 
@@ -143,12 +146,11 @@ export default function UploadSohPage() {
     formData.append('file', selectedFile);
     formData.append('stoProjectId', currentStoProjectId);
     
-    // Simulate initial upload progress
     let progressInterval = setInterval(() => {
         setUploadProgress(prev => {
             if (prev >= 50) { 
                  clearInterval(progressInterval);
-                 return 50; // Cap at 50 for upload phase
+                 return 50;
             }
             return prev + 10;
         });
@@ -163,7 +165,7 @@ export default function UploadSohPage() {
       
       clearInterval(progressInterval); 
       setCurrentStatusMessage("File uploaded. Server is processing...");
-      setUploadProgress(75); // Indicate server processing has started
+      setUploadProgress(75);
 
       const result: UploadResult = await response.json();
 
@@ -179,7 +181,6 @@ export default function UploadSohPage() {
         duration: 7000,
       });
 
-      // After successful upload, re-fetch the references for the current project
       fetchSohReferences(currentStoProjectId); 
       
       setSelectedFile(null);
@@ -239,7 +240,9 @@ export default function UploadSohPage() {
             Upload Stock On Hand (SOH) Data
           </CardTitle>
           <CardDescription>
-            Upload SOH data from XLSX files. Max file size: 100MB. Ensure columns: <strong>sku, sku_description, qty_on_hand</strong>. Optional: <strong>loc</strong>.
+            Upload SOH data from XLSX files. Max file size: 100MB.
+            Ensure columns: <strong>sku, sku_description, qty_on_hand</strong> (required).
+            Other supported columns like <strong>loc, lot, storerkey, item_id, form_no, qty_allocated, qty_available, lottable01, project_scope, lottable10, project_id, wbs_element, skugrp, received_date, huid, owner_id, stdcube</strong> will also be processed if present.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -252,7 +255,6 @@ export default function UploadSohPage() {
                 value={projectForUpload} 
                 onValueChange={(value) => {
                   setProjectForUpload(value);
-                  // When superuser changes project, clear file selection and progress
                   setSelectedFile(null);
                   setUploadProgress(0);
                   setCurrentStatusMessage(null);
@@ -298,7 +300,7 @@ export default function UploadSohPage() {
               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               onChange={handleFileChange}
               className="file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 disabled:opacity-70"
-              disabled={isProcessing || (currentUser?.role === 'superuser' && !projectForUpload && !isLoadingProjects) }
+              disabled={isProcessing || (currentUser?.role === 'superuser' && !projectForUpload && (isLoadingProjects || userProjects.length === 0)) }
             />
             {selectedFile && <p className="mt-2 text-sm text-muted-foreground">Selected: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)</p>}
           </div>
@@ -336,7 +338,7 @@ export default function UploadSohPage() {
             <div className="flex items-center justify-center py-4"> <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading references...</div>
           ) : uploadedReferences.length === 0 ? (
             <p className="text-muted-foreground py-4 text-center">No SOH data files have been processed for {
-                currentUser?.role === 'superuser' ? (projectForUpload ? `project ${getProjectNameById(projectForUpload)}` : "the selected project context (select a project above)") : (selectedProject ? `project ${selectedProject.name}` : "your project")
+                currentUser?.role === 'superuser' ? (projectForUpload ? `project '${getProjectNameById(projectForUpload)}'` : "the selected project context (select a project above)") : (selectedProject ? `project '${selectedProject.name}'` : "your project")
             }.</p>
           ) : (
             <div className="overflow-x-auto">
@@ -363,11 +365,11 @@ export default function UploadSohPage() {
                         ref.status === "Completed" && !ref.errorMessage ? "bg-green-100 text-green-700" :
                         ref.status === "Completed" && ref.errorMessage ? "bg-yellow-100 text-yellow-700" : 
                         ref.status === "Processing" || ref.status === "Storing" || ref.status === "Validating" || ref.status === "Uploading" ? "bg-blue-100 text-blue-700" : 
-                        ref.status === "ValidationError" || ref.status === "StorageError" || ref.status === "UploadError" || ref.status === "SystemError" ? "bg-red-100 text-red-700" : 
+                        ref.status === "ValidationError" || ref.status === "StorageError" || ref.status === "SystemError" || ref.status === "UploadError" ? "bg-red-100 text-red-700" : 
                         "bg-gray-100 text-gray-700" 
                       }`}>
                         {ref.status === "Completed" && !ref.errorMessage && <CheckCircle className="mr-1 h-3 w-3" />}
-                        {ref.status === "Completed" && ref.errorMessage && <AlertTriangle className="mr-1 h-3 w-3" />}
+                        {(ref.status === "Completed" && ref.errorMessage) && <AlertTriangle className="mr-1 h-3 w-3" />}
                         {(ref.status === "ValidationError" || ref.status === "StorageError" || ref.status === "SystemError" || ref.status === "UploadError") && <AlertTriangle className="mr-1 h-3 w-3" />}
                         {(ref.status === "Processing" || ref.status === "Storing" || ref.status === "Validating" || ref.status === "Uploading") && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
                         {ref.status}
