@@ -1,8 +1,8 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { db } from '@/lib/firebase/config';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
-import type { User, SOHDataReference } from '@/lib/types';
+import { collection, query, where, getDocs, orderBy, doc, getDoc } from 'firebase/firestore';
+import type { User, SOHDataReference, STOProject } from '@/lib/types';
 import { parse } from 'cookie';
 
 async function getUserFromSession(req: NextRequest): Promise<User | null> {
@@ -38,17 +38,35 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ message: 'STO Project ID is required as a query parameter.' }, { status: 400 });
   }
 
-  // Authorization: Ensure user has access to this project's SOH data.
-  // For simplicity here, we'll assume if an admin selected it, or a superuser is querying, it's allowed.
-  // A more robust check would verify project ownership or assignment.
-  // e.g., check if currentUser.role === 'superuser' and project createdBy them, 
-  // or if admin, check if stoProjectId matches their selectedProject from session/cookie and they are assigned.
+  // Authorization Check
+  try {
+    const projectDocRef = doc(db, 'sto_projects', stoProjectId);
+    const projectDocSnap = await getDoc(projectDocRef);
 
-  if (currentUser.role !== 'superuser') {
-    const selectedProjectCookie = req.cookies.get('stockflow-selected-project');
-    if (!selectedProjectCookie || JSON.parse(selectedProjectCookie.value).id !== stoProjectId) {
-        return NextResponse.json({ message: 'Forbidden: Admins can only fetch references for their currently selected project.' }, { status: 403 });
+    if (!projectDocSnap.exists()) {
+      return NextResponse.json({ message: 'Project not found.' }, { status: 404 });
     }
+    const projectData = projectDocSnap.data() as STOProject;
+
+    if (currentUser.role === 'superuser') {
+      // Superuser must own the project to see its SOH references
+      if (projectData.createdBy !== currentUser.email) {
+        return NextResponse.json({ message: 'Forbidden: Superusers can only access references for projects they created.' }, { status: 403 });
+      }
+    } else { // Admin roles
+      const selectedProjectCookie = req.cookies.get('stockflow-selected-project');
+      if (!selectedProjectCookie || JSON.parse(selectedProjectCookie.value).id !== stoProjectId) {
+          return NextResponse.json({ message: 'Forbidden: Admins can only fetch references for their currently selected project (cookie mismatch).' }, { status: 403 });
+      }
+      // Admin must be assigned to the project
+      if (!projectData.assignedAdminUserIds || !projectData.assignedAdminUserIds.includes(currentUser.id)) {
+        return NextResponse.json({ message: 'Forbidden: You are not assigned to this project.' }, { status: 403 });
+      }
+    }
+  } catch (authError) {
+    console.error('Error during authorization check for SOH references:', authError);
+    const errorMessage = authError instanceof Error ? authError.message : 'An unknown authorization error occurred';
+    return NextResponse.json({ message: 'Failed to authorize SOH reference access.', error: errorMessage }, { status: 500 });
   }
 
 
@@ -56,7 +74,7 @@ export async function GET(req: NextRequest) {
     const referencesQuery = query(
       collection(db, 'soh_data_references'),
       where('stoProjectId', '==', stoProjectId),
-      orderBy('processedAt', 'desc') // Order by processedAt or uploadedAt
+      orderBy('uploadedAt', 'desc') // Changed from processedAt for more consistent ordering from upload time
     );
 
     const querySnapshot = await getDocs(referencesQuery);
@@ -70,3 +88,4 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ message: 'Failed to fetch SOH references.', error: errorMessage }, { status: 500 });
   }
 }
+

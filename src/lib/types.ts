@@ -62,13 +62,14 @@ export interface SOHDataReference {
   errorMessage?: string | null; // Allow null for Firestore
   contentType?: string;
   size?: number;
+  isLocked?: boolean; // New field for locking
 }
 
 
 export interface StockItem {
   id: string; // Firestore document ID
   sku: string; // Essential
-  sku_description: string; // Essential (was 'description')
+  sku_description: string; // Essential
   qty_on_hand: number; // Essential
   
   form_no?: string | null;
@@ -108,7 +109,7 @@ export interface STOProject {
   clientName?: string;
   departmentName?: string;
   settingsNotes?: string;
-  createdBy: string;
+  createdBy: string; // superuser's email
   createdAt: string;
   updatedAt: string;
   assignedAdminUserIds?: string[];
@@ -118,3 +119,4 @@ export interface SimplifiedSelectedProject {
   id: string;
   name: string;
 }
+

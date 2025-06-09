@@ -7,9 +7,12 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import type { SOHDataReference, STOProject, User } from "@/lib/types";
-import { UploadCloud, CheckCircle, AlertTriangle, FileCheck2, FolderKanban, Info, Loader2 } from "lucide-react"; // Removed XCircle as AlertTriangle covers errors
+import type { SOHDataReference, STOProject } from "@/lib/types";
+import { UploadCloud, CheckCircle, AlertTriangle, FileCheck2, FolderKanban, Info, Loader2, Lock, Unlock, Trash2 } from "lucide-react";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useUser } from "@/app/dashboard/layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -96,11 +99,11 @@ export default function UploadSohPage() {
     }
 
     if (prevEffectiveProjectIdRef.current !== effectiveProjectId) {
-      if (effectiveProjectId) { // Only fetch if there's an actual project ID
+      if (effectiveProjectId) { 
         fetchSohReferences(effectiveProjectId);
-      } else { // If no project ID, clear references
+      } else { 
         setUploadedReferences([]);
-        setIsLoadingReferences(false); // Ensure loading state is false
+        setIsLoadingReferences(false);
       }
     }
     prevEffectiveProjectIdRef.current = effectiveProjectId;
@@ -203,6 +206,29 @@ export default function UploadSohPage() {
       setIsProcessing(false);
     }
   };
+
+  const handleToggleLock = async (referenceId: string, currentIsLocked: boolean) => {
+    try {
+      const response = await fetch(`/api/soh/references/${referenceId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isLocked: !currentIsLocked }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to update lock status.');
+      }
+      toast({ title: "Success", description: result.message });
+      // Refresh the list
+      const currentStoProjectId = currentUser?.role === 'superuser' ? projectForUpload : selectedProject?.id;
+      if (currentStoProjectId) {
+        fetchSohReferences(currentStoProjectId);
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
+    }
+  };
   
   const getProjectNameById = (projectId?: string): string => {
     if (!projectId) return "N/A";
@@ -232,6 +258,7 @@ export default function UploadSohPage() {
 
 
   return (
+    <TooltipProvider>
     <div className="space-y-6">
       <Card className="shadow-lg">
         <CardHeader>
@@ -240,9 +267,7 @@ export default function UploadSohPage() {
             Upload Stock On Hand (SOH) Data
           </CardTitle>
           <CardDescription>
-            Upload SOH data from XLSX files. Max file size: 100MB.
-            Ensure columns: <strong>sku, sku_description, qty_on_hand</strong> (required).
-            Other supported columns like <strong>loc, lot, storerkey, item_id, form_no, qty_allocated, qty_available, lottable01, project_scope, lottable10, project_id, wbs_element, skugrp, received_date, huid, owner_id, stdcube</strong> will also be processed if present.
+            Upload SOH data from XLSX files. Max file size: 100MB. Ensure columns: <strong>sku, sku_description, qty_on_hand</strong> (required). Additional supported columns like <strong>loc, lot, storerkey, form_no</strong> etc., will also be processed if present.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -347,18 +372,22 @@ export default function UploadSohPage() {
                 <TableRow>
                   <TableHead>Filename</TableHead>
                   <TableHead>Project</TableHead>
-                  <TableHead>Processed At</TableHead>
+                  <TableHead>Uploaded At</TableHead>
                   <TableHead>Items</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Details</TableHead>
+                  {currentUser?.role === 'superuser' && <TableHead className="text-right">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {uploadedReferences.map((ref) => (
-                  <TableRow key={ref.id}>
-                    <TableCell className="font-medium max-w-xs truncate" title={ref.originalFilename || ref.filename}>{ref.originalFilename || ref.filename}</TableCell>
+                  <TableRow key={ref.id} className={ref.isLocked ? 'opacity-70 bg-muted/30' : ''}>
+                    <TableCell className="font-medium max-w-xs truncate" title={ref.originalFilename || ref.filename}>
+                        {ref.isLocked && <Lock className="h-3 w-3 mr-1.5 inline-block text-amber-600" />}
+                        {ref.originalFilename || ref.filename}
+                    </TableCell>
                     <TableCell className="text-sm max-w-[150px] truncate" title={getProjectNameById(ref.stoProjectId)}>{getProjectNameById(ref.stoProjectId)}</TableCell>
-                    <TableCell>{ref.processedAt ? format(new Date(ref.processedAt), 'PPpp') : (ref.uploadedAt ? format(new Date(ref.uploadedAt), 'PPpp') : 'N/A')}</TableCell>
+                    <TableCell>{ref.uploadedAt ? format(new Date(ref.uploadedAt), 'PPp') : 'N/A'}</TableCell>
                     <TableCell>{ref.rowCount}</TableCell>
                     <TableCell>
                       <span className={`flex items-center px-2 py-0.5 text-xs rounded-full whitespace-nowrap ${
@@ -378,6 +407,26 @@ export default function UploadSohPage() {
                      <TableCell className="text-xs text-muted-foreground max-w-md truncate" title={ref.errorMessage || undefined}>
                         {ref.errorMessage || (ref.status === "Completed" && ref.rowCount > 0 && !ref.errorMessage ? "Successfully processed." : ref.status === "Completed" && ref.rowCount === 0 ? "Processed, no valid items." : "-")}
                      </TableCell>
+                     {currentUser?.role === 'superuser' && (
+                        <TableCell className="text-right space-x-1">
+                           <Tooltip>
+                             <TooltipTrigger asChild>
+                                <Button variant="ghost" size="icon" onClick={() => handleToggleLock(ref.id, !!ref.isLocked)} className="h-8 w-8">
+                                    {ref.isLocked ? <Unlock className="h-4 w-4 text-green-600" /> : <Lock className="h-4 w-4 text-amber-600" />}
+                                </Button>
+                             </TooltipTrigger>
+                             <TooltipContent><p>{ref.isLocked ? "Unlock Reference (allows use in forms)" : "Lock Reference (prevents use in forms)"}</p></TooltipContent>
+                           </Tooltip>
+                           <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8" disabled>
+                                        <Trash2 className="h-4 w-4 text-destructive" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Delete Reference (Coming Soon)</p></TooltipContent>
+                           </Tooltip>
+                        </TableCell>
+                     )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -387,5 +436,7 @@ export default function UploadSohPage() {
         </CardContent>
       </Card>
     </div>
+    </TooltipProvider>
   );
 }
+
