@@ -3,7 +3,7 @@ import type { UserRole, FormStatus, STOProjectStatus, SOHDataReferenceStatus } f
 import { 
   LayoutDashboard, UploadCloud, FileText, Users, Settings, Printer, Edit3, 
   CheckCircle2, ShieldCheck, Database, BarChart3, FolderKanban, ListChecks, 
-  PlayCircle, ScanLine, Archive, Hourglass, AlertCircle
+  PlayCircle, ScanLine, Archive, Hourglass, AlertCircle, Briefcase, FileCheck2
 } from "lucide-react";
 
 // NAV_LINKS is now a function that accepts the current user's role
@@ -69,7 +69,7 @@ export const SOH_DATA_REFERENCE_STATUS_ICONS: Record<SOHDataReferenceStatus, Rea
   "StorageError": AlertCircle,
   "UploadError": AlertCircle,
   "SystemError": AlertCircle,
-  "Pending Deletion": Hourglass, // Or a specific delete pending icon if available
+  "Pending Deletion": Hourglass, 
 };
 
 
@@ -120,5 +120,6 @@ export const getSohRefStatusIcon = (status: SOHDataReferenceStatus, errorMessage
   if (status === "Completed") {
     return errorMessage ? AlertTriangle : CheckCircle2;
   }
+  // Ensure FileCheck2 is imported or handled if SOH_DATA_REFERENCE_STATUS_ICONS isn't exhaustive
   return SOH_DATA_REFERENCE_STATUS_ICONS[status] || AlertCircle;
 };
