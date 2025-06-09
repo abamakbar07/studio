@@ -11,7 +11,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import type { SOHDataReference, STOProject, SOHDataReferenceStatus } from "@/lib/types";
-import { UploadCloud, FolderKanban, Info, Loader2, Lock, Unlock, Trash2, Hourglass, FileCheck2, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { UploadCloud, FolderKanban, Info, Loader2, Lock, Unlock, Trash2, Hourglass } from "lucide-react"; // Removed FileCheck2 as it's handled by getSohRefStatusIcon
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useUser } from "@/app/dashboard/layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -33,13 +33,14 @@ export default function UploadSohPage() {
   const { currentUser, selectedProject, isLoadingUser } = useUser();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false); // Global processing for upload
   const [currentStatusMessage, setCurrentStatusMessage] = useState<string | null>(null);
   const [uploadedReferences, setUploadedReferences] = useState<SOHDataReference[]>([]);
   const [userProjects, setUserProjects] = useState<STOProject[]>([]);
   const [projectForUpload, setProjectForUpload] = useState<string | undefined>(undefined);
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [isLoadingReferences, setIsLoadingReferences] = useState(false);
+  const [deletingReferenceId, setDeletingReferenceId] = useState<string | null>(null); // Specific for delete action
   const prevEffectiveProjectIdRef = useRef<string | undefined>(); 
 
   const { toast } = useToast();
@@ -88,7 +89,7 @@ export default function UploadSohPage() {
     } finally {
       setIsLoadingReferences(false);
     }
-  }, [toast]);
+  }, [toast]); // Removed currentUser dependencies as they are handled by effectiveProjectId logic
 
   useEffect(() => {
     if (currentUser?.role === 'superuser') {
@@ -109,7 +110,6 @@ export default function UploadSohPage() {
         fetchSohReferences(effectiveProjectId);
       } else { 
         setUploadedReferences([]);
-        // No need to set isLoadingReferences to false here, fetchSohReferences handles it or if no projectIdToFetch
       }
     }
     prevEffectiveProjectIdRef.current = effectiveProjectId;
@@ -190,7 +190,7 @@ export default function UploadSohPage() {
         duration: 7000,
       });
 
-      fetchSohReferences(currentStoProjectId); 
+      if (currentStoProjectId) fetchSohReferences(currentStoProjectId); 
       
       setSelectedFile(null);
       const fileInput = document.getElementById('file-upload') as HTMLInputElement;
@@ -214,6 +214,7 @@ export default function UploadSohPage() {
   };
 
   const handleToggleLock = async (referenceId: string, currentIsLocked: boolean) => {
+    // No specific loading state for lock, it's usually quick
     try {
       const response = await fetch(`/api/soh/references/${referenceId}`, {
         method: 'PATCH',
@@ -236,6 +237,7 @@ export default function UploadSohPage() {
   };
 
   const handleInitiateDeleteReference = async (referenceId: string) => {
+    setDeletingReferenceId(referenceId);
     try {
       const response = await fetch(`/api/soh/references/${referenceId}/delete-request`, {
         method: 'POST',
@@ -251,7 +253,9 @@ export default function UploadSohPage() {
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
-      toast({ title: "Error", description: errorMessage, variant: "destructive" });
+      toast({ title: "Error Initiating Deletion", description: errorMessage, variant: "destructive" });
+    } finally {
+      setDeletingReferenceId(null);
     }
   };
   
@@ -293,7 +297,7 @@ export default function UploadSohPage() {
             Upload Stock On Hand (SOH) Data
           </CardTitle>
           <CardDescription>
-            Upload SOH data from XLSX files. Max file size: 100MB. Required columns: <strong>sku, sku_description, qty_on_hand</strong>. Additional supported columns (e.g., <strong>loc, lot, storerkey, form_no</strong>, etc.) will also be processed if present.
+          Upload SOH data from XLSX files. Max file size: 100MB. Required columns: <strong>sku, sku_description, qty_on_hand</strong>. Additional supported columns (e.g., <strong>loc, lot, storerkey, form_no</strong>, etc.) will also be processed if present.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -323,7 +327,7 @@ export default function UploadSohPage() {
                   ))}
                 </SelectContent>
               </Select>
-              {userProjects.length === 0 && !isLoadingProjects && (
+              {userProjects.length === 0 && !isLoadingProjects && !isProcessing && (
                 <p className="text-xs text-muted-foreground">
                   You need to <Link href="/dashboard/projects" className="underline text-primary">create an STO project</Link> first.
                 </p>
@@ -378,7 +382,7 @@ export default function UploadSohPage() {
       <Card>
         <CardHeader>
           <CardTitle className="font-headline text-xl flex items-center">
-             <FileCheck2 className="mr-2 h-5 w-5 text-accent" />
+            <FolderKanban className="mr-2 h-5 w-5 text-accent" /> {/* Changed icon */}
             Uploaded SOH Data References
           </CardTitle>
           <CardDescription>List of SOH files processed for the current project context.
@@ -410,12 +414,13 @@ export default function UploadSohPage() {
                   const StatusIcon = getSohRefStatusIcon(ref.status, ref.errorMessage);
                   const statusClass = getSohRefStatusClass(ref.status, ref.errorMessage);
                   const isDeletePending = ref.status === 'Pending Deletion' && ref.deleteApprovalToken && new Date(ref.deleteApprovalTokenExpires || 0) > new Date();
+                  const isCurrentlyDeleting = deletingReferenceId === ref.id;
 
                   return (
-                  <TableRow key={ref.id} className={ref.isLocked || isDeletePending ? 'opacity-70 bg-muted/30' : ''}>
+                  <TableRow key={ref.id} className={(ref.isLocked || isDeletePending || isCurrentlyDeleting) ? 'opacity-70 bg-muted/30' : ''}>
                     <TableCell className="font-medium max-w-xs truncate" title={ref.originalFilename || ref.filename}>
                         {ref.isLocked && <Lock className="h-3 w-3 mr-1.5 inline-block text-amber-600" />}
-                        {isDeletePending && <Hourglass className="h-3 w-3 mr-1.5 inline-block text-orange-500" />}
+                        {(isDeletePending || (ref.status === 'Pending Deletion' && !isDeletePending) /* Show if pending or expired pending */) && <Hourglass className="h-3 w-3 mr-1.5 inline-block text-orange-500" />}
                         {ref.originalFilename || ref.filename}
                     </TableCell>
                     <TableCell className="text-sm max-w-[150px] truncate" title={getProjectNameById(ref.stoProjectId)}>{getProjectNameById(ref.stoProjectId)}</TableCell>
@@ -434,7 +439,7 @@ export default function UploadSohPage() {
                         <TableCell className="text-right space-x-1">
                            <Tooltip>
                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="icon" onClick={() => handleToggleLock(ref.id, !!ref.isLocked)} className="h-8 w-8" disabled={isProcessing || isDeletePending}>
+                                <Button variant="ghost" size="icon" onClick={() => handleToggleLock(ref.id, !!ref.isLocked)} className="h-8 w-8" disabled={isProcessing || isCurrentlyDeleting || isDeletePending}>
                                     {ref.isLocked ? <Unlock className="h-4 w-4 text-green-600" /> : <Lock className="h-4 w-4 text-amber-600" />}
                                 </Button>
                              </TooltipTrigger>
@@ -444,29 +449,35 @@ export default function UploadSohPage() {
                             <AlertDialogTrigger asChild>
                                <Tooltip>
                                     <TooltipTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="h-8 w-8" disabled={isProcessing || isDeletePending || ref.isLocked}>
-                                            <Trash2 className="h-4 w-4 text-destructive" />
+                                        <Button 
+                                            variant="ghost" 
+                                            size="icon" 
+                                            className="h-8 w-8" 
+                                            disabled={isProcessing || isCurrentlyDeleting || isDeletePending || ref.isLocked}
+                                        >
+                                            {isCurrentlyDeleting ? <Loader2 className="h-4 w-4 animate-spin text-destructive" /> : <Trash2 className="h-4 w-4 text-destructive" />}
                                         </Button>
                                     </TooltipTrigger>
-                                    <TooltipContent><p>{isDeletePending ? "Deletion Pending Approval" : (ref.isLocked ? "Unlock to delete" : "Request Deletion")}</p></TooltipContent>
+                                    <TooltipContent><p>{isDeletePending ? "Deletion Pending Approval" : (ref.isLocked ? "Unlock to request deletion" : "Request Deletion")}</p></TooltipContent>
                                 </Tooltip>
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                                 <AlertDialogHeader>
                                     <AlertDialogTitle>Request SOH Reference Deletion?</AlertDialogTitle>
                                     <AlertDialogDescription>
-                                        This will send a deletion request to the Super Administrator for the SOH reference:
+                                        This will send a deletion request to the System Administrator for the SOH reference:
                                         <br /><strong>{ref.originalFilename || ref.filename}</strong> (Project: {getProjectNameById(ref.stoProjectId)}).
                                         <br />This action cannot be immediately undone after administrator approval. All associated stock items will also be deleted.
                                     </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogCancel disabled={isCurrentlyDeleting}>Cancel</AlertDialogCancel>
                                     <AlertDialogAction
                                         onClick={() => handleInitiateDeleteReference(ref.id)}
                                         className="bg-destructive hover:bg-destructive/90"
+                                        disabled={isCurrentlyDeleting}
                                     >
-                                        Request Deletion
+                                        {isCurrentlyDeleting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/>Requesting...</> : "Request Deletion"}
                                     </AlertDialogAction>
                                 </AlertDialogFooter>
                             </AlertDialogContent>
