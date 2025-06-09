@@ -11,7 +11,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import type { SOHDataReference, STOProject, SOHDataReferenceStatus } from "@/lib/types";
-import { UploadCloud, FolderKanban, Info, Loader2, Lock, Unlock, Trash2, Hourglass, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { UploadCloud, FolderKanban, Info, Loader2, Lock, Unlock, Trash2, Hourglass, FileCheck2, AlertTriangle, CheckCircle2 } from "lucide-react";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useUser } from "@/app/dashboard/layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
